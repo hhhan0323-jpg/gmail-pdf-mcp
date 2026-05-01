@@ -18,20 +18,21 @@ import type { OAuth2Client } from 'google-auth-library';
 import { searchEmails, fetchEmail, fetchAllAttachmentData } from './gmail.js';
 import { convertEmailToPdfBuffer, closeBrowser } from './pdf-converter.js';
 import { mergeEmailWithAttachments, countPdfPages } from './pdf-merger.js';
-import { saveToLocal, saveToDrive } from './storage.js';
-import { buildOutputPaths, getDefaultOutputDir } from './file-manager.js';
-import type { ConversionResult, BatchConversionResult } from './types.js';
+import { saveToLocal, saveToDrive, findDriveFile, saveExcelToDrive } from './storage.js';
+import { buildOutputPaths, getDefaultOutputDir, formatTimestamp } from './file-manager.js';
+import type { ConversionResult, BatchConversionResult, EmailMessage } from './types.js';
+import { parseEmailFields } from './parser.js';
+import { generateExcelBuffer } from './excel.js';
+import type { ExcelRow } from './excel.js';
 
 // ── Tool helpers ───────────────────────────────────────────────────────────────
 
-async function doConvertEmail(
+async function doConvertEmailMessage(
   auth: OAuth2Client,
-  messageId: string,
+  message: EmailMessage,
   outputDir: string,
   includeAttachments: boolean
 ): Promise<ConversionResult> {
-  const message = await fetchEmail(auth, messageId);
-
   const paths = buildOutputPaths(outputDir, message.senderName, message.date);
 
   // Convert email HTML → PDF
@@ -68,7 +69,7 @@ async function doConvertEmail(
 
   return {
     success: true,
-    messageId,
+    messageId: message.messageId,
     subject: message.subject,
     senderName: message.senderName,
     filename: paths.filename,
@@ -79,6 +80,16 @@ async function doConvertEmail(
     attachmentsMerged,
     errors,
   };
+}
+
+async function doConvertEmail(
+  auth: OAuth2Client,
+  messageId: string,
+  outputDir: string,
+  includeAttachments: boolean
+): Promise<ConversionResult> {
+  const message = await fetchEmail(auth, messageId);
+  return doConvertEmailMessage(auth, message, outputDir, includeAttachments);
 }
 
 // ── Tool definitions ───────────────────────────────────────────────────────────
@@ -175,6 +186,32 @@ const TOOLS = [
     },
   },
   {
+    name: 'batch_export_excel',
+    description: '搜尋車資郵件，批次轉 PDF（已有 PDF 可跳過）並匯出 Excel 彙整表，欄位含乘車日期、客戶名稱、對造名稱、案號、抵達地點、請款人、金額、備註、郵件連結、PDF檔名',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: '完整 Gmail 搜尋語法，例如 "subject:車資 from:user@example.com after:2026/4/1"',
+        },
+        max_results: {
+          type: 'number',
+          description: '最多處理幾封（預設 20，上限 50）',
+        },
+        include_attachments: {
+          type: 'boolean',
+          description: '是否合併附件至 PDF（預設 true）',
+        },
+        skip_existing_pdf: {
+          type: 'boolean',
+          description: '若 Drive 已有同名 PDF 則跳過重新轉換（預設 true）',
+        },
+      },
+      required: ['query'],
+    },
+  },
+  {
     name: 'save_schedule_token',
     description: '將目前的 Google 授權儲存為個人排程 token。呼叫後會回傳一個永久 bearer token，讓無人值守的排程任務可以用你自己的 Gmail 和 Google Drive 執行，不需要每次重新授權。每個 Google 帳號只需要設定一次。',
     inputSchema: { type: 'object', properties: {} },
@@ -259,6 +296,78 @@ async function handleSaveScheduleToken(sessionId: string) {
   };
 }
 
+async function handleBatchExportExcel(sessionId: string, args: Record<string, unknown>): Promise<unknown> {
+  const query = String(args['query']);
+  const maxResults = Math.min(Number(args['max_results'] ?? 20), 50);
+  const includeAttachments = args['include_attachments'] !== false;
+  const skipExisting = args['skip_existing_pdf'] !== false;
+  const outputDir = getDefaultOutputDir();
+
+  const auth = await getAuthClientForSession(sessionId);
+  const emailSummaries = await searchEmails(auth, query, maxResults);
+
+  type RowResult = {
+    messageId: string;
+    subject: string;
+    status: string;
+    pdfFilename?: string;
+    driveUrl?: string;
+  };
+
+  const excelRows: ExcelRow[] = [];
+  const results: RowResult[] = [];
+
+  for (const summary of emailSummaries) {
+    try {
+      const message = await fetchEmail(auth, summary.messageId);
+      const fields = parseEmailFields(message.plainBody, message.htmlBody, message.senderName);
+      const paths = buildOutputPaths(outputDir, message.senderName, message.date);
+      const gmailLink = `https://mail.google.com/mail/u/0/#all/${message.messageId}`;
+
+      let pdfFilename: string | undefined;
+      let driveUrl: string | undefined;
+      let status = '';
+
+      if (skipExisting) {
+        const existing = await findDriveFile(auth, paths.filename);
+        if (existing) {
+          pdfFilename = paths.filename;
+          driveUrl = existing.driveUrl;
+          status = 'skipped';
+        }
+      }
+
+      if (!pdfFilename) {
+        const result = await doConvertEmailMessage(auth, message, outputDir, includeAttachments);
+        pdfFilename = result.filename;
+        driveUrl = result.driveUrl;
+        status = result.success ? 'converted' : `failed: ${result.errors.join(', ')}`;
+      }
+
+      excelRows.push({ message, fields, pdfFilename, gmailLink });
+      results.push({ messageId: message.messageId, subject: message.subject, status, pdfFilename, driveUrl });
+    } catch (err) {
+      results.push({
+        messageId: summary.messageId,
+        subject: summary.subject,
+        status: `error: ${(err as Error).message}`,
+      });
+    }
+  }
+
+  const excelBuffer = await generateExcelBuffer(excelRows);
+  const excelFilename = `車資報表_${formatTimestamp(new Date())}.xlsx`;
+  const { driveUrl: excelDriveUrl } = await saveExcelToDrive(auth, excelBuffer, excelFilename);
+
+  return {
+    processed: results.filter(r => r.status === 'converted' || r.status === 'skipped').length,
+    failed: results.filter(r => r.status.startsWith('error') || r.status.startsWith('failed')).length,
+    excel_url: excelDriveUrl,
+    excel_filename: excelFilename,
+    results,
+  };
+}
+
 async function handleBatchConvertEmails(sessionId: string, args: Record<string, unknown>): Promise<BatchConversionResult> {
   const query = String(args['query']);
   const maxResults = Math.min(Number(args['max_results'] ?? 5), 20);
@@ -329,6 +438,9 @@ function createMcpServer(sessionId: string): Server {
           break;
         case 'batch_convert_emails':
           result = await handleBatchConvertEmails(sessionId, args as Record<string, unknown>);
+          break;
+        case 'batch_export_excel':
+          result = await handleBatchExportExcel(sessionId, args as Record<string, unknown>);
           break;
         case 'save_schedule_token':
           result = await handleSaveScheduleToken(sessionId);
