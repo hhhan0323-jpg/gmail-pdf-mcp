@@ -87,13 +87,27 @@ export async function searchEmails(
 ): Promise<EmailSummary[]> {
   const gmail = getGmailClient(auth);
 
-  const listRes = await gmail.users.messages.list({
-    userId: 'me',
-    q: `subject:${query}`,
-    maxResults,
-  });
+  // Collect message IDs with pagination until we hit maxResults
+  const messageIds: Array<{ id: string; threadId?: string | null }> = [];
+  let pageToken: string | undefined;
 
-  const messages = listRes.data.messages ?? [];
+  while (messageIds.length < maxResults) {
+    const remaining = maxResults - messageIds.length;
+    const listRes = await gmail.users.messages.list({
+      userId: 'me',
+      q: query,
+      maxResults: Math.min(remaining, 500),
+      pageToken,
+    });
+
+    for (const m of listRes.data.messages ?? []) {
+      if (m.id) messageIds.push({ id: m.id, threadId: m.threadId });
+    }
+    pageToken = listRes.data.nextPageToken ?? undefined;
+    if (!pageToken) break;
+  }
+
+  const messages = messageIds.slice(0, maxResults);
   if (messages.length === 0) return [];
 
   const summaries: EmailSummary[] = [];

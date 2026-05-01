@@ -96,13 +96,13 @@ const TOOLS = [
   },
   {
     name: 'search_emails',
-    description: '搜尋 Gmail 中主旨包含指定關鍵字的郵件，回傳郵件列表',
+    description: '搜尋 Gmail 郵件，支援完整 Gmail 搜尋語法，回傳郵件列表',
     inputSchema: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: '主旨關鍵字，例如 "發票" 或 "報價單"',
+          description: '完整 Gmail 搜尋語法，例如 "subject:車資 from:user@example.com after:2026/4/27 before:2026/4/28"',
         },
         max_results: {
           type: 'number',
@@ -150,13 +150,13 @@ const TOOLS = [
   },
   {
     name: 'batch_convert_emails',
-    description: '搜尋主旨含關鍵字的郵件並批次轉 PDF（主要使用工具）',
+    description: '搜尋郵件並批次轉 PDF（主要使用工具），支援完整 Gmail 搜尋語法',
     inputSchema: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: '主旨關鍵字',
+          description: '完整 Gmail 搜尋語法，例如 "subject:車資 from:user@example.com after:2026/4/27 before:2026/4/28"',
         },
         max_results: {
           type: 'number',
