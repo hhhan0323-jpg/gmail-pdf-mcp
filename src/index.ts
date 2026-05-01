@@ -320,7 +320,7 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
   for (const summary of emailSummaries) {
     try {
       const message = await fetchEmail(auth, summary.messageId);
-      const fields = parseEmailFields(message.plainBody, message.htmlBody, message.senderName);
+      const fields = parseEmailFields(message.plainBody, message.htmlBody, message.senderName, message.subject);
       const paths = buildOutputPaths(outputDir, message.senderName, message.date);
       const gmailLink = `https://mail.google.com/mail/u/0/#all/${message.messageId}`;
 
