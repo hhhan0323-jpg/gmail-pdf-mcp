@@ -41,6 +41,21 @@ async function getOrCreateDriveFolder(
 }
 
 /**
+ * Create (or reuse) a date-range sub-folder under Gmail PDF MCP/:
+ *   Gmail PDF MCP / {dateRange}  (e.g. "20260427-20260430")
+ * Returns the folder ID.
+ */
+export async function createDateRangeDriveFolder(
+  auth: OAuth2Client,
+  dateRange: string
+): Promise<string> {
+  const { google } = await import('googleapis');
+  const drive = google.drive({ version: 'v3', auth });
+  const rootId = await getOrCreateDriveFolder(drive, 'Gmail PDF MCP');
+  return getOrCreateDriveFolder(drive, dateRange, rootId);
+}
+
+/**
  * Search Drive for an existing file by exact filename (across all folders).
  * Returns its view link and file ID if found, null otherwise.
  */
@@ -67,21 +82,22 @@ export async function findDriveFile(
 }
 
 /**
- * Upload an Excel file to the user's Google Drive under:
- *   Gmail PDF MCP / {filename}
+ * Upload an Excel file to Google Drive.
+ * If parentFolderId is provided the file is placed there; otherwise under Gmail PDF MCP/.
  */
 export async function saveExcelToDrive(
   auth: OAuth2Client,
   buffer: Buffer,
-  filename: string
+  filename: string,
+  parentFolderId?: string
 ): Promise<{ driveUrl: string; driveFileId: string }> {
   const { google } = await import('googleapis');
   const drive = google.drive({ version: 'v3', auth });
 
-  const rootId = await getOrCreateDriveFolder(drive, 'Gmail PDF MCP');
+  const folderId = parentFolderId ?? await getOrCreateDriveFolder(drive, 'Gmail PDF MCP');
 
   const file = await drive.files.create({
-    requestBody: { name: filename, parents: [rootId] },
+    requestBody: { name: filename, parents: [folderId] },
     media: {
       mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       body: Readable.from(buffer),
@@ -98,20 +114,20 @@ export async function saveExcelToDrive(
 }
 
 /**
- * Upload a PDF to the user's Google Drive under:
- *   Gmail PDF MCP / {senderName} / {filename}
- * Returns a shareable view link (anyone with link can view).
+ * Upload a PDF to Google Drive under {parent} / {senderName} / {filename}.
+ * If parentFolderId is provided it is used as the root; otherwise Gmail PDF MCP/.
  */
 export async function saveToDrive(
   auth: OAuth2Client,
   pdfBuffer: Buffer,
   senderName: string,
-  filename: string
+  filename: string,
+  parentFolderId?: string
 ): Promise<{ driveUrl: string; driveFileId: string }> {
   const { google } = await import('googleapis');
   const drive = google.drive({ version: 'v3', auth });
 
-  const rootId = await getOrCreateDriveFolder(drive, 'Gmail PDF MCP');
+  const rootId = parentFolderId ?? await getOrCreateDriveFolder(drive, 'Gmail PDF MCP');
   const senderId = await getOrCreateDriveFolder(drive, senderName, rootId);
 
   const file = await drive.files.create({

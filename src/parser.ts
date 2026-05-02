@@ -9,7 +9,8 @@ export interface ParsedEmailFields {
   notes: string;
 }
 
-// Split email at the forwarded-message separator (Gmail dashes or iPhone "Begin forwarded message:")
+// ── Forward split ─────────────────────────────────────────────────────────────
+
 function splitAtForward(text: string): { before: string; after: string } {
   const patterns = [/-{4,}/, /Begin forwarded message:/i];
   let minIdx = text.length;
@@ -22,45 +23,62 @@ function splitAtForward(text: string): { before: string; after: string } {
     : { before: text, after: '' };
 }
 
-const ALL_LABELS = ['客戶名稱', '對造名稱', '案號', '抵達地點', '請款人', '備註'];
+// ── Label registry ────────────────────────────────────────────────────────────
 
-// Strip iPhone/mail client boilerplate appended to field values
+// All known label variants (longest/most-specific first) used in regex lookahead
+const ALL_LABEL_VARIANTS = [
+  '客戶名稱', '客戶',
+  '對造名稱', '對造',
+  '案號',
+  '抵達地點', '抵達地', '抵達',
+  '請款人',
+  '備註',
+  '乘車日期', '日期',
+  '金額',
+];
+
+// Per-field variants to try in order (most specific first)
+const FIELD_VARIANTS: Record<string, string[]> = {
+  '客戶名稱': ['客戶名稱', '客戶'],
+  '對造名稱': ['對造名稱', '對造'],
+  '案號': ['案號'],
+  '抵達地點': ['抵達地點', '抵達地', '抵達'],
+  '請款人': ['請款人'],
+  '備註': ['備註'],
+};
+
+// Strip boilerplate and nested label prefixes from captured values
+const NESTED_LABEL_RE = /^(?:抵達地點|抵達地|抵達|客戶名稱|客戶|對造名稱|對造|案號|備註)[：:]\s*/;
+
 function cleanValue(val: string): string {
   return val
+    .replace(NESTED_LABEL_RE, '')
     .replace(/\s*Sent from my iPhone.*/i, '')
     .replace(/\s*Begin forwarded message.*/i, '')
     .trim();
 }
 
-// Extract a structured field value (e.g. "客戶名稱：瓦城") from the pre-forward section
-function extractField(text: string, field: string): string {
-  const labelAlt = ALL_LABELS.join('|');
-  // Match value (non-newline chars) up to the next label or end of line
-  const re = new RegExp(`${field}[：:]\\s*([^\\n]+?)(?=\\s*(?:${labelAlt})[：:]|[ \\t]*$)`, 'm');
+// Extract one field using a specific label string
+function extractField(text: string, label: string): string {
+  const lookaheadAlt = ALL_LABEL_VARIANTS.join('|');
+  const re = new RegExp(
+    `${label}[：:]\\s*([^\\n]+?)(?=\\s*(?:${lookaheadAlt})[：:]|[ \\t]*$)`,
+    'm'
+  );
   const m = text.match(re);
   return m ? cleanValue(m[1].trim()) : '';
 }
 
-// Parse 客戶名稱 and 對造名稱 from subject when body has no structured fields
-// Handles: "車資 - 德盛 v 富鴻網 260427 開庭" and "車資-瓦城-翔盟-冷凍冷藏案"
-function parseSubjectForClients(subject: string): { clientName: string; opposingName: string } {
-  // Pattern 1: "車資 - {A} v {B} ..."
-  const m1 = subject.match(/車資\s*[-–]\s*(.+?)\s+v\s+(\S+)/);
-  if (m1) return { clientName: m1[1].trim(), opposingName: m1[2].trim() };
-
-  // Pattern 2: "車資-{A}-{B}-..." (dash-delimited, no " v ")
-  const m2 = subject.match(/車資[-–]([^-–\d(（\s]+?)[-–]([^-–\d(（\s]+)/);
-  if (m2) return { clientName: m2[1].trim(), opposingName: m2[2].trim() };
-
-  return { clientName: '', opposingName: '' };
-}
-
-// Parse ride date from subject line: "260427" → "2026/04/27"
-function parseSubjectDate(subject: string): string {
-  const m = subject.match(/(?<!\d)([2][0-9])([0-1][0-9])([0-3][0-9])(?!\d)/);
-  if (m) return `20${m[1]}/${m[2]}/${m[3]}`;
+// Try all variants for a canonical field key
+function extractFieldMulti(text: string, key: string): string {
+  for (const variant of (FIELD_VARIANTS[key] ?? [key])) {
+    const v = extractField(text, variant);
+    if (v) return v;
+  }
   return '';
 }
+
+// ── Receipt / ticket parsing ──────────────────────────────────────────────────
 
 function extractYoxiDate(text: string): string {
   // "乘車時間 2026年 04月 27日，週一"
@@ -82,15 +100,70 @@ function extractUberAmount(text: string): number | null {
 }
 
 function extractUberDate(text: string): string {
-  // Generic Chinese date: "2026年04月27日"
+  // Generic Chinese date in receipt: "2026年04月27日"
   const m = text.match(/(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日/);
   if (m) return `${m[1]}/${m[2].padStart(2, '0')}/${m[3].padStart(2, '0')}`;
   return '';
 }
 
+// Body-labelled amount: "金額：500" or "車資：NTD 500" etc.
+function extractAmountFromBody(text: string): number | null {
+  const patterns = [
+    /金額[：:]\s*(?:NTD\s*)?([\d,]+)/,
+    /費用[：:]\s*(?:NTD\s*)?([\d,]+)/,
+    /票價[：:]\s*(?:NTD\s*)?([\d,]+)/,
+    /總計[：:]\s*(?:NTD\s*)?([\d,]+)/,
+  ];
+  for (const pat of patterns) {
+    const m = text.match(pat);
+    if (m) return parseInt(m[1].replace(/,/g, ''), 10);
+  }
+  return null;
+}
+
+// Body-labelled ride date: "乘車日期：2026/04/27"
+function extractRideDateFromBody(text: string): string {
+  const m = text.match(/(?:乘車日期|出發日期|搭乘日期)[：:]\s*([\d/年月日]+)/);
+  if (!m) return '';
+  const val = m[1];
+  const dm = val.match(/(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日/);
+  if (dm) return `${dm[1]}/${dm[2].padStart(2, '0')}/${dm[3].padStart(2, '0')}`;
+  return val;
+}
+
+// ── Subject fallbacks ─────────────────────────────────────────────────────────
+
+// Parse client / opposing names from email subject
+function parseSubjectForClients(subject: string): { clientName: string; opposingName: string } {
+  // Pattern 1: "車資 - 德盛 v 富鴻網 260427 開庭"
+  const m1 = subject.match(/車資\s*[-–]\s*(.+?)\s+v\s+(\S+)/);
+  if (m1) return { clientName: m1[1].trim(), opposingName: m1[2].trim() };
+
+  // Pattern 2: "車資-瓦城-翔盟-冷凍冷藏案"
+  const m2 = subject.match(/車資[-–]([^-–\d(（\s]+?)[-–]([^-–\d(（\s]+)/);
+  if (m2) return { clientName: m2[1].trim(), opposingName: m2[2].trim() };
+
+  // Pattern 3: "xxx車資" — captures token immediately before 車資
+  const m3 = subject.match(/[-–]([^-–(（\s]+)車資/);
+  if (m3) return { clientName: m3[1].trim(), opposingName: '' };
+
+  return { clientName: '', opposingName: '' };
+}
+
+// Parse date from 6-digit YYMMDD in subject: "260427" → "2026/04/27"
+function parseSubjectDate(subject: string): string {
+  const m = subject.match(/(?<!\d)([2][0-9])([0-1][0-9])([0-3][0-9])(?!\d)/);
+  if (m) return `20${m[1]}/${m[2]}/${m[3]}`;
+  return '';
+}
+
+// ── HTML stripping ────────────────────────────────────────────────────────────
+
 function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, ' ').replace(/&[a-z#\d]+;/gi, ' ').replace(/\s+/g, ' ').trim();
 }
+
+// ── Public API ────────────────────────────────────────────────────────────────
 
 export function extractRequester(senderName: string): string {
   // "黃筱涵 Hannah Huang" → "黃筱涵", "張菀萱律師" → "張菀萱律師"
@@ -108,28 +181,30 @@ export function parseEmailFields(
   const { before, after } = splitAtForward(text);
   const fromSubject = parseSubjectForClients(subject);
 
-  // Structured fields from pre-forward section, with subject as fallback
-  const clientName = extractField(before, '客戶名稱') || fromSubject.clientName;
-  const opposingName = extractField(before, '對造名稱') || fromSubject.opposingName;
+  const clientName = extractFieldMulti(before, '客戶名稱') || fromSubject.clientName;
+  const opposingName = extractFieldMulti(before, '對造名稱') || fromSubject.opposingName;
 
-  // Amount and ride date: search forwarded section first, then full text as fallback
+  // Amount: receipt first, then full text, then body label
   const amount =
     extractYoxiAmount(after) ?? extractUberAmount(after) ??
-    extractYoxiAmount(text) ?? extractUberAmount(text);
+    extractYoxiAmount(text) ?? extractUberAmount(text) ??
+    extractAmountFromBody(before);
 
+  // Ride date: receipt first, then body label, then subject date
   const rideDate =
     extractYoxiDate(after) || extractUberDate(after) ||
     extractYoxiDate(text) || extractUberDate(text) ||
+    extractRideDateFromBody(text) ||
     parseSubjectDate(subject);
 
   return {
     rideDate,
     clientName,
     opposingName,
-    caseNumber: extractField(before, '案號'),
-    destination: extractField(before, '抵達地點'),
+    caseNumber: extractFieldMulti(before, '案號'),
+    destination: extractFieldMulti(before, '抵達地點'),
     requester: extractRequester(senderName),
     amount,
-    notes: extractField(before, '備註'),
+    notes: extractFieldMulti(before, '備註'),
   };
 }

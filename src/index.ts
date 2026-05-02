@@ -18,7 +18,7 @@ import type { OAuth2Client } from 'google-auth-library';
 import { searchEmails, fetchEmail, fetchAllAttachmentData } from './gmail.js';
 import { convertEmailToPdfBuffer, closeBrowser } from './pdf-converter.js';
 import { mergeEmailWithAttachments, countPdfPages } from './pdf-merger.js';
-import { saveToLocal, saveToDrive, findDriveFile, saveExcelToDrive } from './storage.js';
+import { saveToLocal, saveToDrive, findDriveFile, saveExcelToDrive, createDateRangeDriveFolder } from './storage.js';
 import { buildOutputPaths, getDefaultOutputDir, formatTimestamp } from './file-manager.js';
 import type { ConversionResult, BatchConversionResult, EmailMessage } from './types.js';
 import { parseEmailFields } from './parser.js';
@@ -31,7 +31,8 @@ async function doConvertEmailMessage(
   auth: OAuth2Client,
   message: EmailMessage,
   outputDir: string,
-  includeAttachments: boolean
+  includeAttachments: boolean,
+  driveFolderId?: string
 ): Promise<ConversionResult> {
   const paths = buildOutputPaths(outputDir, message.senderName, message.date);
 
@@ -58,7 +59,7 @@ async function doConvertEmailMessage(
   let driveFileId: string | undefined;
   let localPath: string | undefined;
   try {
-    const drive = await saveToDrive(auth, finalPdf, message.senderName, paths.filename);
+    const drive = await saveToDrive(auth, finalPdf, message.senderName, paths.filename, driveFolderId);
     driveUrl = drive.driveUrl;
     driveFileId = drive.driveFileId;
   } catch (err) {
@@ -314,6 +315,20 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
     driveUrl?: string;
   };
 
+  // Determine date range from email metadata → name the Drive folder
+  function compactDate(d: Date) {
+    return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+  }
+  const validDates = emailSummaries.map(s => new Date(s.date)).filter(d => !isNaN(d.getTime()));
+  const minDate = validDates.length ? new Date(Math.min(...validDates.map(d => d.getTime()))) : new Date();
+  const maxDate = validDates.length ? new Date(Math.max(...validDates.map(d => d.getTime()))) : new Date();
+  const dateRangeName = compactDate(minDate) === compactDate(maxDate)
+    ? compactDate(minDate)
+    : `${compactDate(minDate)}-${compactDate(maxDate)}`;
+
+  // Create shared Drive folder for this batch: Gmail PDF MCP / {dateRange} /
+  const dateRangeFolderId = await createDateRangeDriveFolder(auth, dateRangeName);
+
   const excelRows: ExcelRow[] = [];
   const results: RowResult[] = [];
 
@@ -338,7 +353,7 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
       }
 
       if (!pdfFilename) {
-        const result = await doConvertEmailMessage(auth, message, outputDir, includeAttachments);
+        const result = await doConvertEmailMessage(auth, message, outputDir, includeAttachments, dateRangeFolderId);
         pdfFilename = result.filename;
         driveUrl = result.driveUrl;
         status = result.success ? 'converted' : `failed: ${result.errors.join(', ')}`;
@@ -357,11 +372,13 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
 
   const excelBuffer = await generateExcelBuffer(excelRows);
   const excelFilename = `車資報表_${formatTimestamp(new Date())}.xlsx`;
-  const { driveUrl: excelDriveUrl } = await saveExcelToDrive(auth, excelBuffer, excelFilename);
+  const { driveUrl: excelDriveUrl } = await saveExcelToDrive(auth, excelBuffer, excelFilename, dateRangeFolderId);
 
   return {
     processed: results.filter(r => r.status === 'converted' || r.status === 'skipped').length,
     failed: results.filter(r => r.status.startsWith('error') || r.status.startsWith('failed')).length,
+    date_range: dateRangeName,
+    drive_folder: `Gmail PDF MCP / ${dateRangeName}`,
     excel_url: excelDriveUrl,
     excel_filename: excelFilename,
     results,
