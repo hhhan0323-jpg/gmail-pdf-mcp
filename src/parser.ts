@@ -122,6 +122,13 @@ function extractAmountFromBody(text: string): number | null {
     /票價[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
     /總計[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
     /合計[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
+    /車資[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
+    /車費[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
+    /搭車費[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
+    /計程車[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
+    /高鐵費[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
+    /台鐵費[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
+    /捷運費[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
   ];
   for (const pat of patterns) {
     const m = text.match(pat);
