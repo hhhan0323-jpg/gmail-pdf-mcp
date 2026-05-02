@@ -81,15 +81,15 @@ function extractFieldMulti(text: string, key: string): string {
 // ── Receipt / ticket parsing ──────────────────────────────────────────────────
 
 function extractYoxiDate(text: string): string {
-  // "乘車時間 2026年 04月 27日，週一"
-  const m = text.match(/乘車時間\s+(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日/);
+  // "乘車時間 2026年 04月 27日，週一" or "乘車時間 *2026年 04月 29日*" (plain text bold)
+  const m = text.match(/乘車時間\s+\*?(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日/);
   if (m) return `${m[1]}/${m[2].padStart(2, '0')}/${m[3].padStart(2, '0')}`;
   return '';
 }
 
 function extractYoxiAmount(text: string): number | null {
-  // "支付金額 NTD 334"
-  const m = text.match(/支付金額\s+NTD\s+([\d,]+)/);
+  // "支付金額 NTD 334" or "支付金額 *NTD 105*" (plain text bold)
+  const m = text.match(/支付金額\s+\*?NTD\s+([\d,]+)/);
   return m ? parseInt(m[1].replace(/,/g, ''), 10) : null;
 }
 
