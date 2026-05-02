@@ -24,7 +24,7 @@ import type { ConversionResult, BatchConversionResult, EmailMessage } from './ty
 import { parseEmailFields } from './parser.js';
 import { generateExcelBuffer } from './excel.js';
 import type { ExcelRow } from './excel.js';
-import { ocrReceiptFields } from './vision.js';
+import { ocrReceiptFields, ocrHtmlBody } from './vision.js';
 
 // ── Tool helpers ───────────────────────────────────────────────────────────────
 
@@ -351,6 +351,16 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
           if (fields.amount === null && ocr.amount !== null) fields.amount = ocr.amount;
           if (!fields.rideDate && ocr.rideDate) fields.rideDate = ocr.rideDate;
         }
+      }
+
+      // HTML body OCR fallback: render email body to JPEG and run Vision when fields still missing
+      const stillMissing = fields.amount === null || !fields.rideDate;
+      if (stillMissing && message.htmlBody && process.env.ANTHROPIC_API_KEY) {
+        console.error(`[ocr-html] ${message.senderName} | rendering body (${message.htmlBody.length}b)...`);
+        const ocr = await ocrHtmlBody(message.htmlBody);
+        console.error(`[ocr-html] result: amount=${ocr.amount} date=${ocr.rideDate}`);
+        if (fields.amount === null && ocr.amount !== null) fields.amount = ocr.amount;
+        if (!fields.rideDate && ocr.rideDate) fields.rideDate = ocr.rideDate;
       }
 
       const paths = buildOutputPaths(outputDir, message.senderName, message.date);

@@ -117,6 +117,50 @@ async function callVisionApi(
   return { amount, rideDate };
 }
 
+// Render email HTML body to JPEG (first 3000px) for OCR.
+async function htmlToJpeg(htmlContent: string): Promise<Buffer | null> {
+  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
+  try {
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
+    });
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1200, height: 3000 });
+    await page.setContent(htmlContent, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    const shot = await page.screenshot({
+      type: 'jpeg',
+      quality: 85,
+      clip: { x: 0, y: 0, width: 1200, height: 3000 },
+    });
+    return Buffer.from(shot);
+  } catch (err) {
+    console.error('[vision] htmlToJpeg error:', (err as Error).message);
+    return null;
+  } finally {
+    await browser?.close();
+  }
+}
+
+/**
+ * OCR an email HTML body to extract 金額 and 乘車日期.
+ * Renders the HTML to JPEG via Puppeteer, then calls Anthropic Vision.
+ */
+export async function ocrHtmlBody(htmlBody: string): Promise<OcrResult> {
+  const empty: OcrResult = { amount: null, rideDate: '' };
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey || !htmlBody) return empty;
+  try {
+    const jpegBuffer = await htmlToJpeg(htmlBody);
+    if (!jpegBuffer) return empty;
+    console.error(`[vision] html→jpeg ${jpegBuffer.length}b`);
+    return await callVisionApi(jpegBuffer.toString('base64'), 'image/jpeg', apiKey);
+  } catch (err) {
+    console.error('[vision] ocrHtmlBody error:', (err as Error).message);
+    return empty;
+  }
+}
+
 /**
  * Extract 金額 and 乘車日期 from an image or PDF attachment.
  * - Images (JPEG/PNG/GIF/WEBP): sent directly as base64 to Anthropic Vision.
