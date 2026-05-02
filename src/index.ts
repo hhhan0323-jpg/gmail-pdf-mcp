@@ -339,11 +339,15 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
       const fields = parseEmailFields(message.plainBody, message.htmlBody, message.senderName, message.subject);
 
       // OCR fallback: if amount or date still missing, run Claude vision on image/PDF attachments
-      if ((fields.amount === null || !fields.rideDate) && message.hasAttachments && process.env.ANTHROPIC_API_KEY) {
+      const needOcr = fields.amount === null || !fields.rideDate;
+      console.error(`[ocr-check] ${message.senderName} | needOcr=${needOcr} | hasAtt=${message.hasAttachments} | keySet=${!!process.env.ANTHROPIC_API_KEY} | attCount=${message.attachments.length}`);
+      if (needOcr && message.hasAttachments && process.env.ANTHROPIC_API_KEY) {
         const attData = await fetchAllAttachmentData(auth, message);
         for (const att of attData) {
           if (fields.amount !== null && fields.rideDate) break;
+          console.error(`[ocr] trying ${att.filename} (${att.mimeType}, ${att.data.length}b)`);
           const ocr = await ocrReceiptFields(att.data, att.mimeType);
+          console.error(`[ocr] result: amount=${ocr.amount} date=${ocr.rideDate}`);
           if (fields.amount === null && ocr.amount !== null) fields.amount = ocr.amount;
           if (!fields.rideDate && ocr.rideDate) fields.rideDate = ocr.rideDate;
         }
