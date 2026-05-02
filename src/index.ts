@@ -349,12 +349,6 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
         }
       }
 
-      // Final fallback: use email send date as ride date
-      if (!fields.rideDate) {
-        const d = message.date;
-        fields.rideDate = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
-      }
-
       const paths = buildOutputPaths(outputDir, message.senderName, message.date);
       const gmailLink = `https://mail.google.com/mail/u/0/#all/${message.messageId}`;
 
