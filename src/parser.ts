@@ -106,13 +106,22 @@ function extractUberDate(text: string): string {
   return '';
 }
 
+function extractMinguoDate(text: string): string {
+  // "民國115年4月27日" → "2026/04/27"
+  const m = text.match(/民國\s*(\d{2,3})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+  if (!m) return '';
+  const year = parseInt(m[1], 10) + 1911;
+  return `${year}/${m[2].padStart(2, '0')}/${m[3].padStart(2, '0')}`;
+}
+
 // Body-labelled amount: "金額：500" or "車資：NTD 500" etc.
 function extractAmountFromBody(text: string): number | null {
   const patterns = [
-    /金額[：:]\s*(?:NTD\s*)?([\d,]+)/,
-    /費用[：:]\s*(?:NTD\s*)?([\d,]+)/,
-    /票價[：:]\s*(?:NTD\s*)?([\d,]+)/,
-    /總計[：:]\s*(?:NTD\s*)?([\d,]+)/,
+    /金額[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
+    /費用[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
+    /票價[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
+    /總計[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
+    /合計[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
   ];
   for (const pat of patterns) {
     const m = text.match(pat);
@@ -192,8 +201,8 @@ export function parseEmailFields(
 
   // Ride date: receipt first, then body label, then subject date
   const rideDate =
-    extractYoxiDate(after) || extractUberDate(after) ||
-    extractYoxiDate(text) || extractUberDate(text) ||
+    extractYoxiDate(after) || extractUberDate(after) || extractMinguoDate(after) ||
+    extractYoxiDate(text) || extractUberDate(text) || extractMinguoDate(text) ||
     extractRideDateFromBody(text) ||
     parseSubjectDate(subject);
 

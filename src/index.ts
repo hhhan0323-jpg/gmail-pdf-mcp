@@ -24,6 +24,7 @@ import type { ConversionResult, BatchConversionResult, EmailMessage } from './ty
 import { parseEmailFields } from './parser.js';
 import { generateExcelBuffer } from './excel.js';
 import type { ExcelRow } from './excel.js';
+import { ocrReceiptFields } from './vision.js';
 
 // ── Tool helpers ───────────────────────────────────────────────────────────────
 
@@ -336,6 +337,18 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
     try {
       const message = await fetchEmail(auth, summary.messageId);
       const fields = parseEmailFields(message.plainBody, message.htmlBody, message.senderName, message.subject);
+
+      // OCR fallback: if amount or date still missing, run Claude vision on image/PDF attachments
+      if ((fields.amount === null || !fields.rideDate) && message.hasAttachments && process.env.ANTHROPIC_API_KEY) {
+        const attData = await fetchAllAttachmentData(auth, message);
+        for (const att of attData) {
+          if (fields.amount !== null && fields.rideDate) break;
+          const ocr = await ocrReceiptFields(att.data, att.mimeType);
+          if (fields.amount === null && ocr.amount !== null) fields.amount = ocr.amount;
+          if (!fields.rideDate && ocr.rideDate) fields.rideDate = ocr.rideDate;
+        }
+      }
+
       const paths = buildOutputPaths(outputDir, message.senderName, message.date);
       const gmailLink = `https://mail.google.com/mail/u/0/#all/${message.messageId}`;
 
