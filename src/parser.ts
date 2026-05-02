@@ -99,9 +99,15 @@ function extractUberAmount(text: string): number | null {
   return m ? parseInt(m[1].replace(/,/g, ''), 10) : null;
 }
 
+function extractUberChineseAmount(text: string): number | null {
+  // "費用 $98.00" — Chinese Uber receipt (no NT prefix)
+  const m = text.match(/費用\s+\$([\d,]+)/);
+  return m ? parseInt(m[1].replace(/,/g, ''), 10) : null;
+}
+
 function extractUberDate(text: string): string {
-  // Generic Chinese date in receipt: "2026年04月27日"
-  const m = text.match(/(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日/);
+  // Generic Chinese date in receipt: "2026年04月27日" or "2026 年 4 月 13 日"
+  const m = text.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
   if (m) return `${m[1]}/${m[2].padStart(2, '0')}/${m[3].padStart(2, '0')}`;
   return '';
 }
@@ -155,7 +161,8 @@ function extractRideDateFromBody(text: string): string {
  */
 export function parseReceiptOcrText(text: string): { amount: number | null; rideDate: string } {
   const amount =
-    extractYoxiAmount(text) ?? extractUberAmount(text) ?? extractAmountFromBody(text);
+    extractYoxiAmount(text) ?? extractUberAmount(text) ?? extractUberChineseAmount(text) ??
+    extractAmountFromBody(text);
 
   const rideDate =
     extractYoxiDate(text) || extractMinguoDate(text) || extractUberDate(text) ||
@@ -250,16 +257,16 @@ export function parseEmailFields(
 
   // Amount: receipt first, then full text, then body label
   const amount =
-    extractYoxiAmount(after) ?? extractUberAmount(after) ??
-    extractYoxiAmount(text) ?? extractUberAmount(text) ??
+    extractYoxiAmount(after) ?? extractUberAmount(after) ?? extractUberChineseAmount(after) ??
+    extractYoxiAmount(text) ?? extractUberAmount(text) ?? extractUberChineseAmount(text) ??
     extractAmountFromBody(before);
 
   // Ride date: receipt first, then body label, then subject date
   const rideDate =
     extractYoxiDate(after) || extractUberDate(after) || extractMinguoDate(after) ||
-    extractEnglishDate(after) || extractUberShortDate(after) ||
+    extractEnglishDate(after) || extractUberShortDate(after) || extractSlashDate(after) ||
     extractYoxiDate(text) || extractUberDate(text) || extractMinguoDate(text) ||
-    extractEnglishDate(text) || extractUberShortDate(text) ||
+    extractEnglishDate(text) || extractUberShortDate(text) || extractSlashDate(text) ||
     extractRideDateFromBody(text) ||
     parseSubjectDate(subject);
 
