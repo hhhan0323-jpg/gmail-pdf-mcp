@@ -147,6 +147,31 @@ function extractRideDateFromBody(text: string): string {
   return val;
 }
 
+// ── OCR text parser (used by vision.ts after Google Vision OCR) ──────────────
+
+/**
+ * Parse raw OCR text from a receipt/ticket image to extract 金額 and 乘車日期.
+ * Applies all receipt-specific patterns in priority order.
+ */
+export function parseReceiptOcrText(text: string): { amount: number | null; rideDate: string } {
+  const amount =
+    extractYoxiAmount(text) ?? extractUberAmount(text) ?? extractAmountFromBody(text);
+
+  const rideDate =
+    extractYoxiDate(text) || extractMinguoDate(text) || extractUberDate(text) ||
+    extractRideDateFromBody(text) || extractSlashDate(text);
+
+  return { amount, rideDate };
+}
+
+// "2026/04/27" or "2026-04-27" (fallback for OCR text without Chinese date labels)
+function extractSlashDate(text: string): string {
+  const m = text.match(/20\d{2}[\/\-]\d{1,2}[\/\-]\d{1,2}/);
+  if (!m) return '';
+  const parts = m[0].split(/[\/\-]/);
+  return `${parts[0]}/${parts[1].padStart(2, '0')}/${parts[2].padStart(2, '0')}`;
+}
+
 // ── Subject fallbacks ─────────────────────────────────────────────────────────
 
 // Parse client / opposing names from email subject

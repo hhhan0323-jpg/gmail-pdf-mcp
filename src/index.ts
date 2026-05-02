@@ -340,8 +340,8 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
 
       // OCR fallback: if amount or date still missing, run Claude vision on image/PDF attachments
       const needOcr = fields.amount === null || !fields.rideDate;
-      console.error(`[ocr-check] ${message.senderName} | needOcr=${needOcr} | hasAtt=${message.hasAttachments} | keySet=${!!process.env.ANTHROPIC_API_KEY} | attCount=${message.attachments.length}`);
-      if (needOcr && message.hasAttachments && process.env.ANTHROPIC_API_KEY) {
+      console.error(`[ocr-check] ${message.senderName} | needOcr=${needOcr} | hasAtt=${message.hasAttachments} | keySet=${!!process.env.GOOGLE_VISION_API_KEY} | attCount=${message.attachments.length}`);
+      if (needOcr && message.hasAttachments && process.env.GOOGLE_VISION_API_KEY) {
         const attData = await fetchAllAttachmentData(auth, message);
         for (const att of attData) {
           if (fields.amount !== null && fields.rideDate) break;
@@ -355,7 +355,7 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
 
       // HTML body OCR fallback: render email body to JPEG and run Vision when fields still missing
       const stillMissing = fields.amount === null || !fields.rideDate;
-      if (stillMissing && message.htmlBody && process.env.ANTHROPIC_API_KEY) {
+      if (stillMissing && message.htmlBody && process.env.GOOGLE_VISION_API_KEY) {
         console.error(`[ocr-html] ${message.senderName} | rendering body (${message.htmlBody.length}b)...`);
         const ocr = await ocrHtmlBody(message.htmlBody);
         console.error(`[ocr-html] result: amount=${ocr.amount} date=${ocr.rideDate}`);
