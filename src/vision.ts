@@ -58,10 +58,11 @@ Examples:
       headers: {
         'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'pdfs-2024-09-25',
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: 'claude-3-5-sonnet-20241022',
         max_tokens: 100,
         messages: [{
           role: 'user',
