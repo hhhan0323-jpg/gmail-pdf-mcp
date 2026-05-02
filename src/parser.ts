@@ -261,10 +261,14 @@ export function parseEmailFields(
     extractYoxiAmount(text) ?? extractUberAmount(text) ?? extractUberChineseAmount(text) ??
     extractAmountFromBody(before);
 
+  // Strip "Date: ..." forwarding-header lines from `after` so receipt content dates take priority
+  // over the forwarding metadata dates (e.g. "Date: 2026年4月27日" beats the actual Uber trip date)
+  const afterForDate = after.replace(/^Date:\s.+$/gm, '');
+
   // Ride date: receipt first, then body label, then subject date
   const rideDate =
-    extractYoxiDate(after) || extractUberDate(after) || extractMinguoDate(after) ||
-    extractEnglishDate(after) || extractUberShortDate(after) || extractSlashDate(after) ||
+    extractYoxiDate(afterForDate) || extractUberDate(afterForDate) || extractMinguoDate(afterForDate) ||
+    extractEnglishDate(afterForDate) || extractUberShortDate(afterForDate) || extractSlashDate(afterForDate) ||
     extractYoxiDate(text) || extractUberDate(text) || extractMinguoDate(text) ||
     extractEnglishDate(text) || extractUberShortDate(text) || extractSlashDate(text) ||
     extractRideDateFromBody(text) ||
