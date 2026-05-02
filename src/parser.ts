@@ -159,6 +159,7 @@ export function parseReceiptOcrText(text: string): { amount: number | null; ride
 
   const rideDate =
     extractYoxiDate(text) || extractMinguoDate(text) || extractUberDate(text) ||
+    extractEnglishDate(text) || extractUberShortDate(text) ||
     extractRideDateFromBody(text) || extractSlashDate(text);
 
   return { amount, rideDate };
@@ -170,6 +171,28 @@ function extractSlashDate(text: string): string {
   if (!m) return '';
   const parts = m[0].split(/[\/\-]/);
   return `${parts[0]}/${parts[1].padStart(2, '0')}/${parts[2].padStart(2, '0')}`;
+}
+
+const ENGLISH_MONTHS: Record<string, string> = {
+  jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+  jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+};
+
+// "Apr 28, 2026" or "April 28, 2026" — Uber receipt English date format
+function extractEnglishDate(text: string): string {
+  const m = text.match(
+    /\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2}),?\s+(20\d{2})\b/i
+  );
+  if (!m) return '';
+  const month = ENGLISH_MONTHS[m[1].toLowerCase().slice(0, 3)];
+  return month ? `${m[3]}/${month}/${m[2].padStart(2, '0')}` : '';
+}
+
+// "4/28/26" — Uber payment timestamp short date (M/D/YY)
+function extractUberShortDate(text: string): string {
+  const m = text.match(/\b(\d{1,2})\/(\d{1,2})\/(2\d)\b/);
+  if (!m) return '';
+  return `20${m[3]}/${m[1].padStart(2, '0')}/${m[2].padStart(2, '0')}`;
 }
 
 // ── Subject fallbacks ─────────────────────────────────────────────────────────
@@ -234,7 +257,9 @@ export function parseEmailFields(
   // Ride date: receipt first, then body label, then subject date
   const rideDate =
     extractYoxiDate(after) || extractUberDate(after) || extractMinguoDate(after) ||
+    extractEnglishDate(after) || extractUberShortDate(after) ||
     extractYoxiDate(text) || extractUberDate(text) || extractMinguoDate(text) ||
+    extractEnglishDate(text) || extractUberShortDate(text) ||
     extractRideDateFromBody(text) ||
     parseSubjectDate(subject);
 
