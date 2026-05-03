@@ -101,6 +101,22 @@ function extractUberAmount(text: string): number | null {
   return m ? parseInt(m[1].replace(/,/g, ''), 10) : null;
 }
 
+function extractThsrAmount(text: string): number | null {
+  // THSR e-ticket: "TWD 700" (per ticket) or "TWD 1,400" (total)
+  // Take the smallest valid amount (≥100) to prefer per-ticket price
+  const matches = [...text.matchAll(/TWD\s+([\d,]+)/g)];
+  const amounts = matches
+    .map(m => parseInt(m[1].replace(/,/g, ''), 10))
+    .filter(n => n >= 100 && n <= 99999);
+  return amounts.length ? Math.min(...amounts) : null;
+}
+
+function extractTaxiReceiptAmount(text: string): number | null {
+  // English-format taxi receipt: "(Total,$): 280" or "(Fare, $):280"
+  const m = text.match(/\((?:Total|Fare)[,\s]*\$\)[:\s]*([\d,]+)/i);
+  return m ? parseInt(m[1].replace(/,/g, ''), 10) : null;
+}
+
 function extractUberChineseAmount(text: string): number | null {
   // "費用 $98.00" or "實付金額 $445" — Chinese Uber/Google Maps receipt (plain $ prefix)
   const m = text.match(/(?:費用|實付金額|付款金額|應付金額)\s+\$([\d,]+)/);
@@ -202,6 +218,7 @@ function extractRideDateFromBody(text: string): string {
 export function parseReceiptOcrText(text: string): { amount: number | null; rideDate: string } {
   const amount =
     extractYoxiAmount(text) ?? extractUberAmount(text) ?? extractUberChineseAmount(text) ??
+    extractThsrAmount(text) ?? extractTaxiReceiptAmount(text) ??
     extractAmountFromBody(text) ?? extractReceiptLabelAmount(text);
 
   const rideDate =
