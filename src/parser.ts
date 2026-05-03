@@ -103,12 +103,12 @@ function extractUberAmount(text: string): number | null {
 
 function extractThsrAmount(text: string): number | null {
   // THSR e-ticket: "TWD 700" (per ticket) or "TWD 1,400" (total)
-  // Take the smallest valid amount (≥100) to prefer per-ticket price
+  // Take the largest valid amount (≥100) to capture the total ticket price
   const matches = [...text.matchAll(/TWD\s+([\d,]+)/g)];
   const amounts = matches
     .map(m => parseInt(m[1].replace(/,/g, ''), 10))
     .filter(n => n >= 100 && n <= 99999);
-  return amounts.length ? Math.min(...amounts) : null;
+  return amounts.length ? Math.max(...amounts) : null;
 }
 
 function extractTaxiReceiptAmount(text: string): number | null {
