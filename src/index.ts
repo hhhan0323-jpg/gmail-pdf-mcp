@@ -110,7 +110,7 @@ const TOOLS = [
   },
   {
     name: 'search_emails',
-    description: '搜尋 Gmail 郵件，支援完整 Gmail 搜尋語法，回傳郵件列表',
+    description: '搜尋 Gmail 郵件列表（僅回傳摘要，不含正文）。此工具僅用於單純查詢郵件是否存在；若需要下載 PDF 或匯出 Excel，請改用 batch_export_excel，不要用此工具逐封讀取郵件。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -128,7 +128,7 @@ const TOOLS = [
   },
   {
     name: 'fetch_email_content',
-    description: '取得單封郵件的完整 HTML 內容與附件列表',
+    description: '取得單封郵件的完整內容（正文 + 附件列表）。此工具僅用於檢視單封郵件內容；若需要批次下載或匯出 Excel，請改用 batch_export_excel，不要用此工具逐封讀取再手動整理。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -190,7 +190,7 @@ const TOOLS = [
   },
   {
     name: 'batch_export_excel',
-    description: '搜尋車資郵件，批次轉 PDF（已有 PDF 可跳過）並匯出 Excel 彙整表，欄位含乘車日期、客戶名稱、對造名稱、案號、抵達地點、請款人、金額、備註、郵件連結、PDF檔名',
+    description: '【主要工具】完整車資處理流程，一步完成：① 搜尋郵件 → ② 逐封下載並轉為 PDF 上傳至 Google Drive → ③ 用 OCR 自動從附件圖片/PDF 抓取金額與乘車日期 → ④ 自動加上 Gmail 標籤「車資(已處理)」→ ⑤ 匯出 Excel 彙整表（欄位：乘車日期、客戶名稱、對造名稱、案號、抵達地點、請款人、金額、備註、Gmail 連結、PDF 檔名）。當任務包含「下載郵件」「轉 PDF」「匯出 Excel」「生成彙整表」等需求時，必須優先呼叫此工具，不可改用 search_emails + fetch_email_content 手動逐步完成。',
     inputSchema: {
       type: 'object',
       properties: {
