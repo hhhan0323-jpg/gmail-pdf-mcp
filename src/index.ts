@@ -15,7 +15,7 @@ import {
   initScheduleTokens, saveScheduleToken,
 } from './auth.js';
 import type { OAuth2Client } from 'google-auth-library';
-import { searchEmails, fetchEmail, fetchAllAttachmentData } from './gmail.js';
+import { searchEmails, fetchEmail, fetchAllAttachmentData, applyLabelToMessage } from './gmail.js';
 import { convertEmailToPdfBuffer, closeBrowser } from './pdf-converter.js';
 import { mergeEmailWithAttachments, countPdfPages } from './pdf-merger.js';
 import { saveToLocal, saveToDrive, findDriveFile, saveExcelToDrive, createDateRangeDriveFolder } from './storage.js';
@@ -412,6 +412,15 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
         pdfFilename = result.filename;
         driveUrl = result.driveUrl;
         status = result.success ? 'converted' : `failed: ${result.errors.join(', ')}`;
+      }
+
+      // Apply "車資(已處理)" label to successfully processed emails
+      if (status === 'converted' || status === 'skipped') {
+        try {
+          await applyLabelToMessage(auth, message.messageId, '車資(已處理)');
+        } catch (err) {
+          console.error(`[label] failed for ${message.messageId}:`, (err as Error).message);
+        }
       }
 
       for (const fields of rowFieldsList) {

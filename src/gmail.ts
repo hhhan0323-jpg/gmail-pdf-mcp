@@ -229,6 +229,36 @@ export async function fetchAllAttachmentData(
   return results;
 }
 
+// Look up a Gmail label ID by display name. Returns null if not found.
+export async function getLabelIdByName(
+  auth: AuthClient,
+  labelName: string
+): Promise<string | null> {
+  const gmail = getGmailClient(auth);
+  const res = await gmail.users.labels.list({ userId: 'me' });
+  const label = res.data.labels?.find(l => l.name === labelName);
+  return label?.id ?? null;
+}
+
+// Apply a label (by display name) to a Gmail message.
+export async function applyLabelToMessage(
+  auth: AuthClient,
+  messageId: string,
+  labelName: string
+): Promise<void> {
+  const labelId = await getLabelIdByName(auth, labelName);
+  if (!labelId) {
+    console.error(`[gmail] Label not found: ${labelName}`);
+    return;
+  }
+  const gmail = getGmailClient(auth);
+  await gmail.users.messages.modify({
+    userId: 'me',
+    id: messageId,
+    requestBody: { addLabelIds: [labelId] },
+  });
+}
+
 // Standalone test
 if (require.main === module) {
   (async () => {
