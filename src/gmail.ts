@@ -229,14 +229,19 @@ export async function fetchAllAttachmentData(
   return results;
 }
 
+// Cache label IDs to avoid repeated labels.list API calls within the same server process
+const labelIdCache = new Map<string, string>();
+
 // Look up a Gmail label ID by display name. Returns null if not found.
 export async function getLabelIdByName(
   auth: AuthClient,
   labelName: string
 ): Promise<string | null> {
+  if (labelIdCache.has(labelName)) return labelIdCache.get(labelName)!;
   const gmail = getGmailClient(auth);
   const res = await gmail.users.labels.list({ userId: 'me' });
   const label = res.data.labels?.find(l => l.name === labelName);
+  if (label?.id) labelIdCache.set(labelName, label.id);
   return label?.id ?? null;
 }
 

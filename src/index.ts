@@ -337,13 +337,28 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
   const excelRows: ExcelRow[] = [];
   const results: RowResult[] = [];
 
-  for (const summary of emailSummaries) {
+  // Process one email and return its results (or an error entry)
+  type AttOcr = { filename: string; amount: number | null; rideDate: string };
+  type EmailResult = {
+    ok: true;
+    message: EmailMessage;
+    rowFieldsList: ParsedEmailFields[];
+    pdfFilename: string;
+    driveUrl: string | undefined;
+    gmailLink: string;
+    status: string;
+  } | {
+    ok: false;
+    messageId: string;
+    subject: string;
+    error: string;
+  };
+
+  const processOne = async (summary: { messageId: string; subject: string }): Promise<EmailResult> => {
     try {
       const message = await fetchEmail(auth, summary.messageId);
       const baseFields = parseEmailFields(message.plainBody, message.htmlBody, message.senderName, message.subject);
 
-      // OCR all attachments upfront — needed both for missing-field fill and multi-row split detection
-      type AttOcr = { filename: string; amount: number | null; rideDate: string };
       const attOcrResults: AttOcr[] = [];
       const needOcr = baseFields.amount === null || !baseFields.rideDate;
       const hasMultipleAtt = message.attachments.length > 1;
@@ -358,15 +373,11 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
         }
       }
 
-      // Receipts are attachments that yielded a positive amount from OCR
       const receiptOcrs = attOcrResults.filter(r => r.amount !== null && (r.amount as number) > 0);
       console.error(`[ocr-check] ${message.senderName} | hasAtt=${message.hasAttachments} | keySet=${!!process.env.GOOGLE_VISION_API_KEY} | attCount=${message.attachments.length} | receipts=${receiptOcrs.length}`);
 
-      // Build field-set(s): one per receipt if multiple found, otherwise one for the whole email
       let rowFieldsList: ParsedEmailFields[];
-
       if (receiptOcrs.length > 1) {
-        // Multiple receipt attachments → split into one Excel row per receipt
         rowFieldsList = receiptOcrs.map((r, i) => ({
           ...baseFields,
           destination: extractNthItem(baseFields.destination, i + 1),
@@ -375,14 +386,11 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
           rideDate: r.rideDate || baseFields.rideDate,
         }));
       } else {
-        // Single row: merge first usable OCR result into baseFields
         const fields: ParsedEmailFields = { ...baseFields };
         for (const r of attOcrResults) {
           if (fields.amount === null && r.amount !== null) fields.amount = r.amount;
           if (!fields.rideDate && r.rideDate) fields.rideDate = r.rideDate;
         }
-
-        // HTML body OCR fallback when fields still missing
         if ((fields.amount === null || !fields.rideDate) && message.htmlBody && process.env.GOOGLE_VISION_API_KEY) {
           console.error(`[ocr-html] ${message.senderName} | rendering body (${message.htmlBody.length}b)...`);
           const ocr = await ocrHtmlBody(message.htmlBody);
@@ -390,7 +398,6 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
           if (fields.amount === null && ocr.amount !== null) fields.amount = ocr.amount;
           if (!fields.rideDate && ocr.rideDate) fields.rideDate = ocr.rideDate;
         }
-
         rowFieldsList = [fields];
       }
 
@@ -417,7 +424,6 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
         status = result.success ? 'converted' : `failed: ${result.errors.join(', ')}`;
       }
 
-      // Apply "車資(已處理)" label to successfully processed emails
       if (status === 'converted' || status === 'skipped') {
         try {
           await applyLabelToMessage(auth, message.messageId, '車資(已處理)');
@@ -426,16 +432,27 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
         }
       }
 
-      for (const fields of rowFieldsList) {
-        excelRows.push({ message, fields, pdfFilename, gmailLink });
-      }
-      results.push({ messageId: message.messageId, subject: message.subject, status, pdfFilename, driveUrl });
+      return { ok: true, message, rowFieldsList, pdfFilename: pdfFilename!, driveUrl, gmailLink, status };
     } catch (err) {
-      results.push({
-        messageId: summary.messageId,
-        subject: summary.subject,
-        status: `error: ${(err as Error).message}`,
-      });
+      return { ok: false, messageId: summary.messageId, subject: summary.subject, error: (err as Error).message };
+    }
+  };
+
+  // Process in parallel batches of 2 to stay within Azure timeout (4 min)
+  const CONCURRENCY = 2;
+  for (let i = 0; i < emailSummaries.length; i += CONCURRENCY) {
+    const batch = emailSummaries.slice(i, i + CONCURRENCY);
+    console.error(`[batch] processing emails ${i + 1}–${Math.min(i + CONCURRENCY, emailSummaries.length)} of ${emailSummaries.length}`);
+    const batchResults = await Promise.all(batch.map(processOne));
+    for (const r of batchResults) {
+      if (r.ok) {
+        for (const fields of r.rowFieldsList) {
+          excelRows.push({ message: r.message, fields, pdfFilename: r.pdfFilename, gmailLink: r.gmailLink });
+        }
+        results.push({ messageId: r.message.messageId, subject: r.message.subject, status: r.status, pdfFilename: r.pdfFilename, driveUrl: r.driveUrl });
+      } else {
+        results.push({ messageId: r.messageId, subject: r.subject, status: `error: ${r.error}` });
+      }
     }
   }
 
