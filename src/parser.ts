@@ -231,7 +231,15 @@ function parseSubjectDate(subject: string): string {
 // ── HTML stripping ────────────────────────────────────────────────────────────
 
 function stripHtml(html: string): string {
-  return html.replace(/<[^>]+>/g, ' ').replace(/&[a-z#\d]+;/gi, ' ').replace(/\s+/g, ' ').trim();
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(?:p|div|li|tr|h[1-6]|blockquote)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&nbsp;/gi, ' ')
+    .replace(/&[a-z#\d]+;/gi, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -252,8 +260,12 @@ export function parseEmailFields(
   const { before, after } = splitAtForward(text);
   const fromSubject = parseSubjectForClients(subject);
 
-  const clientName = extractFieldMulti(before, '客戶名稱') || fromSubject.clientName;
-  const opposingName = extractFieldMulti(before, '對造名稱') || fromSubject.opposingName;
+  // For field extraction, prefer non-quoted lines (lines not starting with ">") so that
+  // reply-correction emails use the new corrected values rather than the quoted original.
+  const beforeUnquoted = before.split('\n').filter(l => !/^\s*>/.test(l)).join('\n');
+
+  const clientName = extractFieldMulti(beforeUnquoted, '客戶名稱') || extractFieldMulti(before, '客戶名稱') || fromSubject.clientName;
+  const opposingName = extractFieldMulti(beforeUnquoted, '對造名稱') || extractFieldMulti(before, '對造名稱') || fromSubject.opposingName;
 
   // Amount: receipt first, then full text, then body label
   const amount =
@@ -274,14 +286,17 @@ export function parseEmailFields(
     extractRideDateFromBody(text) ||
     parseSubjectDate(subject);
 
+  const getField = (key: string) =>
+    extractFieldMulti(beforeUnquoted, key) || extractFieldMulti(before, key);
+
   return {
     rideDate,
     clientName,
     opposingName,
-    caseNumber: extractFieldMulti(before, '案號'),
-    destination: extractFieldMulti(before, '抵達地點'),
+    caseNumber: getField('案號'),
+    destination: getField('抵達地點'),
     requester: extractRequester(senderName),
     amount,
-    notes: extractFieldMulti(before, '備註'),
+    notes: getField('備註'),
   };
 }
