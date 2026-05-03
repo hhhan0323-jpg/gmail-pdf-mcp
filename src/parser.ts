@@ -61,8 +61,10 @@ function cleanValue(val: string): string {
 // Extract one field using a specific label string
 function extractField(text: string, label: string): string {
   const lookaheadAlt = ALL_LABEL_VARIANTS.join('|');
+  // Use [^\S\n]* (horizontal whitespace only) after the colon so the regex
+  // never crosses a newline — prevents 案號 from capturing the next line's value.
   const re = new RegExp(
-    `${label}[：:]\\s*([^\\n]+?)(?=\\s*(?:${lookaheadAlt})[：:]|[ \\t]*$)`,
+    `${label}[：:][^\\S\\n]*([^\\n]+?)(?=\\s*(?:${lookaheadAlt})[：:]|[ \\t]*$)`,
     'm'
   );
   const m = text.match(re);
