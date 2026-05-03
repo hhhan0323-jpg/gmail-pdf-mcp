@@ -301,6 +301,17 @@ function stripHtml(html: string): string {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+/**
+ * Extract the Nth parenthesised item from a multi-trip field.
+ * "(1)智財法院；(2)事務所" with n=1 → "智財法院", n=2 → "事務所".
+ * Falls back to the original string when no "(n)" pattern is found.
+ */
+export function extractNthItem(text: string, n: number): string {
+  if (!text) return text;
+  const m = text.match(new RegExp(`\\(${n}\\)\\s*([^(）；;\\n]+)`));
+  return m ? m[1].trim() : text;
+}
+
 export function extractRequester(senderName: string): string {
   // "黃筱涵 Hannah Huang" → "黃筱涵", "張菀萱律師" → "張菀萱律師"
   const m = senderName.match(/^([一-鿿㐀-䶿]+)/);

@@ -21,7 +21,8 @@ import { mergeEmailWithAttachments, countPdfPages } from './pdf-merger.js';
 import { saveToLocal, saveToDrive, findDriveFile, saveExcelToDrive, createDateRangeDriveFolder } from './storage.js';
 import { buildOutputPaths, getDefaultOutputDir, formatTimestamp } from './file-manager.js';
 import type { ConversionResult, BatchConversionResult, EmailMessage } from './types.js';
-import { parseEmailFields } from './parser.js';
+import { parseEmailFields, extractNthItem } from './parser.js';
+import type { ParsedEmailFields } from './parser.js';
 import { generateExcelBuffer } from './excel.js';
 import type { ExcelRow } from './excel.js';
 import { ocrReceiptFields, ocrHtmlBody } from './vision.js';
@@ -336,31 +337,58 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
   for (const summary of emailSummaries) {
     try {
       const message = await fetchEmail(auth, summary.messageId);
-      const fields = parseEmailFields(message.plainBody, message.htmlBody, message.senderName, message.subject);
+      const baseFields = parseEmailFields(message.plainBody, message.htmlBody, message.senderName, message.subject);
 
-      // OCR fallback: if amount or date still missing, run Claude vision on image/PDF attachments
-      const needOcr = fields.amount === null || !fields.rideDate;
-      console.error(`[ocr-check] ${message.senderName} | needOcr=${needOcr} | hasAtt=${message.hasAttachments} | keySet=${!!process.env.GOOGLE_VISION_API_KEY} | attCount=${message.attachments.length}`);
-      if (needOcr && message.hasAttachments && process.env.GOOGLE_VISION_API_KEY) {
+      // OCR all attachments upfront — needed both for missing-field fill and multi-row split detection
+      type AttOcr = { filename: string; amount: number | null; rideDate: string };
+      const attOcrResults: AttOcr[] = [];
+      const needOcr = baseFields.amount === null || !baseFields.rideDate;
+      const hasMultipleAtt = message.attachments.length > 1;
+
+      if (message.hasAttachments && process.env.GOOGLE_VISION_API_KEY && (needOcr || hasMultipleAtt)) {
         const attData = await fetchAllAttachmentData(auth, message);
         for (const att of attData) {
-          if (fields.amount !== null && fields.rideDate) break;
           console.error(`[ocr] trying ${att.filename} (${att.mimeType}, ${att.data.length}b)`);
           const ocr = await ocrReceiptFields(att.data, att.mimeType);
           console.error(`[ocr] result: amount=${ocr.amount} date=${ocr.rideDate}`);
-          if (fields.amount === null && ocr.amount !== null) fields.amount = ocr.amount;
-          if (!fields.rideDate && ocr.rideDate) fields.rideDate = ocr.rideDate;
+          attOcrResults.push({ filename: att.filename, amount: ocr.amount, rideDate: ocr.rideDate });
         }
       }
 
-      // HTML body OCR fallback: render email body to JPEG and run Vision when fields still missing
-      const stillMissing = fields.amount === null || !fields.rideDate;
-      if (stillMissing && message.htmlBody && process.env.GOOGLE_VISION_API_KEY) {
-        console.error(`[ocr-html] ${message.senderName} | rendering body (${message.htmlBody.length}b)...`);
-        const ocr = await ocrHtmlBody(message.htmlBody);
-        console.error(`[ocr-html] result: amount=${ocr.amount} date=${ocr.rideDate}`);
-        if (fields.amount === null && ocr.amount !== null) fields.amount = ocr.amount;
-        if (!fields.rideDate && ocr.rideDate) fields.rideDate = ocr.rideDate;
+      // Receipts are attachments that yielded a positive amount from OCR
+      const receiptOcrs = attOcrResults.filter(r => r.amount !== null && (r.amount as number) > 0);
+      console.error(`[ocr-check] ${message.senderName} | hasAtt=${message.hasAttachments} | keySet=${!!process.env.GOOGLE_VISION_API_KEY} | attCount=${message.attachments.length} | receipts=${receiptOcrs.length}`);
+
+      // Build field-set(s): one per receipt if multiple found, otherwise one for the whole email
+      let rowFieldsList: ParsedEmailFields[];
+
+      if (receiptOcrs.length > 1) {
+        // Multiple receipt attachments → split into one Excel row per receipt
+        rowFieldsList = receiptOcrs.map((r, i) => ({
+          ...baseFields,
+          destination: extractNthItem(baseFields.destination, i + 1),
+          notes: baseFields.notes || (/去程/i.test(r.filename) ? '去程' : /回程/i.test(r.filename) ? '回程' : ''),
+          amount: r.amount,
+          rideDate: r.rideDate || baseFields.rideDate,
+        }));
+      } else {
+        // Single row: merge first usable OCR result into baseFields
+        const fields: ParsedEmailFields = { ...baseFields };
+        for (const r of attOcrResults) {
+          if (fields.amount === null && r.amount !== null) fields.amount = r.amount;
+          if (!fields.rideDate && r.rideDate) fields.rideDate = r.rideDate;
+        }
+
+        // HTML body OCR fallback when fields still missing
+        if ((fields.amount === null || !fields.rideDate) && message.htmlBody && process.env.GOOGLE_VISION_API_KEY) {
+          console.error(`[ocr-html] ${message.senderName} | rendering body (${message.htmlBody.length}b)...`);
+          const ocr = await ocrHtmlBody(message.htmlBody);
+          console.error(`[ocr-html] result: amount=${ocr.amount} date=${ocr.rideDate}`);
+          if (fields.amount === null && ocr.amount !== null) fields.amount = ocr.amount;
+          if (!fields.rideDate && ocr.rideDate) fields.rideDate = ocr.rideDate;
+        }
+
+        rowFieldsList = [fields];
       }
 
       const paths = buildOutputPaths(outputDir, message.senderName, message.date);
@@ -386,7 +414,9 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
         status = result.success ? 'converted' : `failed: ${result.errors.join(', ')}`;
       }
 
-      excelRows.push({ message, fields, pdfFilename, gmailLink });
+      for (const fields of rowFieldsList) {
+        excelRows.push({ message, fields, pdfFilename, gmailLink });
+      }
       results.push({ messageId: message.messageId, subject: message.subject, status, pdfFilename, driveUrl });
     } catch (err) {
       results.push({
