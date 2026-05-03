@@ -135,6 +135,15 @@ function extractAmountFromBody(text: string): number | null {
     /高鐵費[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
     /台鐵費[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
     /捷運費[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
+    // Taiwan taxi apps / traditional receipts
+    /應付金額[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
+    /實付金額[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
+    /付款金額[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
+    /應收金額[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
+    /計費金額[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
+    /搭乘費[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
+    /應付[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
+    /實付[：:]\s*(?:NT\$|NTD\s*)?([\d,]+)/,
   ];
   for (const pat of patterns) {
     const m = text.match(pat);
@@ -150,6 +159,17 @@ function extractReceiptLabelAmount(text: string): number | null {
     /車資\s+(?:NT\$|NTD\s*)?([\d,]+)/,
     /費用\s+(?:NT\$|NTD\s*)?([\d,]+)/,
     /金額\s+(?:NT\$|NTD\s*)?([\d,]+)/,
+    // Taiwan taxi apps (space-separated, no colon)
+    /應付金額\s+(?:NT\$|NTD\s*)?([\d,]+)/,
+    /實付金額\s+(?:NT\$|NTD\s*)?([\d,]+)/,
+    /付款金額\s+(?:NT\$|NTD\s*)?([\d,]+)/,
+    /應收金額\s+(?:NT\$|NTD\s*)?([\d,]+)/,
+    /計費金額\s+(?:NT\$|NTD\s*)?([\d,]+)/,
+    /搭乘費\s+(?:NT\$|NTD\s*)?([\d,]+)/,
+    /應付\s+(?:NT\$|NTD\s*)?([\d,]+)/,
+    /實付\s+(?:NT\$|NTD\s*)?([\d,]+)/,
+    /合計\s+(?:NT\$|NTD\s*)?([\d,]+)/,
+    /總計\s+(?:NT\$|NTD\s*)?([\d,]+)/,
   ];
   for (const pat of patterns) {
     const m = text.match(pat);
