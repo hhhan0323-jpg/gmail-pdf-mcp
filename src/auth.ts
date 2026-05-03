@@ -8,7 +8,7 @@ import { SecretClient } from '@azure/keyvault-secrets';
 import { DefaultAzureCredential } from '@azure/identity';
 
 const SCOPES = [
-  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/drive.file',
 ];
 const TOKEN_PATH = path.join(process.cwd(), 'token.json');
