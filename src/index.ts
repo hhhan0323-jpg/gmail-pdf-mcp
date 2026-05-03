@@ -15,7 +15,7 @@ import {
   initScheduleTokens, saveScheduleToken,
 } from './auth.js';
 import type { OAuth2Client } from 'google-auth-library';
-import { searchEmails, fetchEmail, fetchAllAttachmentData, applyLabelToMessage } from './gmail.js';
+import { searchEmails, fetchEmail, fetchAllAttachmentData, applyLabelToMessage, sendNotificationEmail } from './gmail.js';
 import { convertEmailToPdfBuffer, closeBrowser } from './pdf-converter.js';
 import { mergeEmailWithAttachments, countPdfPages } from './pdf-merger.js';
 import { saveToLocal, saveToDrive, findDriveFile, saveExcelToDrive, createDateRangeDriveFolder } from './storage.js';
@@ -742,9 +742,33 @@ async function main() {
 
       // Run in background
       handleBatchExportExcel(authSessionId, { query, max_results: 50 })
-        .then(result => {
-          const r = result as { processed?: number; excel_url?: string };
+        .then(async result => {
+          const r = result as { processed?: number; failed?: number; excel_url?: string; date_range?: string };
           console.error(`[trigger] weekly-export done: processed=${r.processed} excel=${r.excel_url}`);
+
+          // Send completion notification email
+          try {
+            const auth = await getAuthClientForSession(authSessionId);
+            const subject = `每週車資報表已完成 ${r.date_range ?? ''}`;
+            const body = [
+              `Hannah 您好，`,
+              ``,
+              `本週車資報表已自動完成，摘要如下：`,
+              ``,
+              `  搜尋條件：${query}`,
+              `  已處理：${r.processed ?? 0} 封`,
+              `  失敗：${r.failed ?? 0} 封`,
+              ``,
+              `Excel 連結：`,
+              `  ${r.excel_url ?? '（無法取得連結）'}`,
+              ``,
+              `此為自動排程通知，每週一 08:00 執行。`,
+            ].join('\n');
+            await sendNotificationEmail(auth, 'hannah@yuan-tuo.com.tw', subject, body);
+            console.error('[trigger] notification email sent');
+          } catch (err) {
+            console.error('[trigger] notification email failed:', (err as Error).message);
+          }
         })
         .catch(err => console.error('[trigger] weekly-export error:', (err as Error).message));
     });

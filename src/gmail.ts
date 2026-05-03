@@ -264,6 +264,30 @@ export async function applyLabelToMessage(
   });
 }
 
+// Send a plain-text notification email from the authenticated account to `to`.
+export async function sendNotificationEmail(
+  auth: AuthClient,
+  to: string,
+  subject: string,
+  body: string
+): Promise<void> {
+  const gmail = getGmailClient(auth);
+  const raw = [
+    `To: ${to}`,
+    `Subject: =?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=utf-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    Buffer.from(body).toString('base64'),
+  ].join('\r\n');
+
+  await gmail.users.messages.send({
+    userId: 'me',
+    requestBody: { raw: Buffer.from(raw).toString('base64url') },
+  });
+}
+
 // Standalone test
 if (require.main === module) {
   (async () => {
