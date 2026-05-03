@@ -143,6 +143,24 @@ function extractAmountFromBody(text: string): number | null {
   return null;
 }
 
+// Receipt label with space separator: "票價 NTD 290" or "票價 290" (THSR e-tickets, no colon)
+function extractReceiptLabelAmount(text: string): number | null {
+  const patterns = [
+    /票價\s+(?:NT\$|NTD\s*)?([\d,]+)/,
+    /車資\s+(?:NT\$|NTD\s*)?([\d,]+)/,
+    /費用\s+(?:NT\$|NTD\s*)?([\d,]+)/,
+    /金額\s+(?:NT\$|NTD\s*)?([\d,]+)/,
+  ];
+  for (const pat of patterns) {
+    const m = text.match(pat);
+    if (m) {
+      const n = parseInt(m[1].replace(/,/g, ''), 10);
+      if (n >= 10 && n <= 99999) return n;
+    }
+  }
+  return null;
+}
+
 // Body-labelled ride date: "乘車日期：2026/04/27"
 function extractRideDateFromBody(text: string): string {
   const m = text.match(/(?:乘車日期|出發日期|搭乘日期)[：:]\s*([\d/年月日]+)/);
@@ -162,7 +180,7 @@ function extractRideDateFromBody(text: string): string {
 export function parseReceiptOcrText(text: string): { amount: number | null; rideDate: string } {
   const amount =
     extractYoxiAmount(text) ?? extractUberAmount(text) ?? extractUberChineseAmount(text) ??
-    extractAmountFromBody(text);
+    extractAmountFromBody(text) ?? extractReceiptLabelAmount(text);
 
   const rideDate =
     extractYoxiDate(text) || extractMinguoDate(text) || extractUberDate(text) ||
