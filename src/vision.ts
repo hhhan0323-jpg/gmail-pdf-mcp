@@ -91,7 +91,7 @@ async function callGoogleVision(imageBase64: string, apiKey: string): Promise<st
     responses?: { fullTextAnnotation?: { text?: string } }[];
   };
   const text = data.responses?.[0]?.fullTextAnnotation?.text ?? '';
-  console.error(`[vision] OCR (${text.length}c): ${text.slice(0, 120).replace(/\n/g, ' ')}`);
+  console.error(`[vision] OCR (${text.length}c): ${text.slice(0, 300).replace(/\n/g, ' ')}`);
   return text;
 }
 

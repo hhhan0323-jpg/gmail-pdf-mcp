@@ -100,8 +100,8 @@ function extractUberAmount(text: string): number | null {
 }
 
 function extractUberChineseAmount(text: string): number | null {
-  // "費用 $98.00" — Chinese Uber receipt (no NT prefix)
-  const m = text.match(/費用\s+\$([\d,]+)/);
+  // "費用 $98.00" or "實付金額 $445" — Chinese Uber/Google Maps receipt (plain $ prefix)
+  const m = text.match(/(?:費用|實付金額|付款金額|應付金額)\s+\$([\d,]+)/);
   return m ? parseInt(m[1].replace(/,/g, ''), 10) : null;
 }
 
