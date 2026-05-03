@@ -306,8 +306,11 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
   const skipExisting = args['skip_existing_pdf'] !== false;
   const outputDir = getDefaultOutputDir();
 
+  console.error(`[batch] start: query="${query}" max=${maxResults} skipExisting=${skipExisting}`);
+
   const auth = await getAuthClientForSession(sessionId);
   const emailSummaries = await searchEmails(auth, query, maxResults);
+  console.error(`[batch] found ${emailSummaries.length} emails`);
 
   type RowResult = {
     messageId: string;
@@ -436,9 +439,11 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
     }
   }
 
+  console.error(`[batch] done: ${excelRows.length} excel rows, uploading...`);
   const excelBuffer = await generateExcelBuffer(excelRows);
   const excelFilename = `車資報表_${formatTimestamp(new Date())}.xlsx`;
   const { driveUrl: excelDriveUrl } = await saveExcelToDrive(auth, excelBuffer, excelFilename, dateRangeFolderId);
+  console.error(`[batch] excel uploaded: ${excelFilename}`);
 
   return {
     processed: results.filter(r => r.status === 'converted' || r.status === 'skipped').length,
