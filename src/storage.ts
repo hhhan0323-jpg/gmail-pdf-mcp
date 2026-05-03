@@ -17,27 +17,40 @@ export async function saveToLocal(
 
 // ── Google Drive ───────────────────────────────────────────────────────────────
 
+// Deduplicate concurrent folder-create calls: same (parentId, name) shares one Promise
+// so parallel email processing never creates duplicate Drive folders.
+const folderPromises = new Map<string, Promise<string>>();
+
 async function getOrCreateDriveFolder(
   drive: any,
   name: string,
   parentId?: string
 ): Promise<string> {
-  const escaped = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-  const parentQ = parentId ? `'${parentId}' in parents` : `'root' in parents`;
-  const q = `name='${escaped}' and mimeType='application/vnd.google-apps.folder' and trashed=false and ${parentQ}`;
+  const key = `${parentId ?? 'root'}::${name}`;
+  const cached = folderPromises.get(key);
+  if (cached) return cached;
 
-  const res = await drive.files.list({ q, fields: 'files(id)', spaces: 'drive' });
-  if (res.data.files?.length > 0) return res.data.files[0].id as string;
+  const promise = (async () => {
+    const escaped = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const parentQ = parentId ? `'${parentId}' in parents` : `'root' in parents`;
+    const q = `name='${escaped}' and mimeType='application/vnd.google-apps.folder' and trashed=false and ${parentQ}`;
 
-  const folder = await drive.files.create({
-    requestBody: {
-      name,
-      mimeType: 'application/vnd.google-apps.folder',
-      ...(parentId ? { parents: [parentId] } : {}),
-    },
-    fields: 'id',
-  });
-  return folder.data.id as string;
+    const res = await drive.files.list({ q, fields: 'files(id)', spaces: 'drive' });
+    if (res.data.files?.length > 0) return res.data.files[0].id as string;
+
+    const folder = await drive.files.create({
+      requestBody: {
+        name,
+        mimeType: 'application/vnd.google-apps.folder',
+        ...(parentId ? { parents: [parentId] } : {}),
+      },
+      fields: 'id',
+    });
+    return folder.data.id as string;
+  })();
+
+  folderPromises.set(key, promise);
+  return promise;
 }
 
 /**
