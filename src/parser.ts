@@ -117,6 +117,16 @@ function extractTaxiReceiptAmount(text: string): number | null {
   return m ? parseInt(m[1].replace(/,/g, ''), 10) : null;
 }
 
+function extractUberPdfAmount(text: string): number | null {
+  // Uber receipt PDFs rendered via Puppeteer produce "$xxx.xx" dollar amounts in OCR text
+  // e.g. "$284.00 $8.00 $276.00 $284.00" — take the largest (≥100) as the total fare
+  const matches = [...text.matchAll(/\$([\d,]+)\.(\d{2})/g)];
+  const amounts = matches
+    .map(m => parseInt(m[1].replace(/,/g, ''), 10))
+    .filter(n => n >= 100 && n <= 99999);
+  return amounts.length ? Math.max(...amounts) : null;
+}
+
 function extractUberChineseAmount(text: string): number | null {
   // "費用 $98.00", "實付金額 $445" — Chinese Uber/Google Maps receipt (plain $ prefix)
   // "總金額Total Amount：$580" — THSR T Express booking confirmation
@@ -220,7 +230,7 @@ function extractRideDateFromBody(text: string): string {
 export function parseReceiptOcrText(text: string): { amount: number | null; rideDate: string } {
   const amount =
     extractYoxiAmount(text) ?? extractUberAmount(text) ?? extractUberChineseAmount(text) ??
-    extractThsrAmount(text) ?? extractTaxiReceiptAmount(text) ??
+    extractThsrAmount(text) ?? extractTaxiReceiptAmount(text) ?? extractUberPdfAmount(text) ??
     extractAmountFromBody(text) ?? extractReceiptLabelAmount(text);
 
   const rideDate =
