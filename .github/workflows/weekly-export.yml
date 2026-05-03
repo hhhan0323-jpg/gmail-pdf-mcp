@@ -1,0 +1,31 @@
+name: Weekly Car Expense Export
+
+on:
+  schedule:
+    # Every Monday 00:00 UTC = 08:00 Asia/Taipei (UTC+8)
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
+    # Allow manual trigger for testing
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Trigger weekly export
+        run: |
+          echo "Triggering weekly export at $(date -u '+%Y-%m-%d %H:%M UTC')"
+          curl -f -s -X POST \
+            -H "Authorization: Bearer ${{ secrets.GMAIL_SCHEDULE_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            https://gmail-pdf-mcp.mangorock-dcccac4c.eastasia.azurecontainerapps.io/trigger/weekly-export \
+            | tee /tmp/trigger_result.json
+          echo ""
+          echo "Trigger response: $(cat /tmp/trigger_result.json)"
+
+      - name: Wait for export to complete
+        run: |
+          echo "Waiting 8 minutes for background export to finish..."
+          sleep 480
+          echo "Done waiting."

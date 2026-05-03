@@ -704,6 +704,51 @@ async function main() {
       await transport.handleRequest(req, res, req.body);
     });
 
+    // ── Weekly export trigger (called by GitHub Actions every Monday 08:00 UTC+8) ─
+
+    app.post('/trigger/weekly-export', async (req, res) => {
+      const authHeader = req.headers['authorization'];
+      if (!authHeader?.startsWith('Bearer ')) {
+        res.status(401).json({ error: 'unauthorized' });
+        return;
+      }
+      const authSessionId = validateBearerToken(authHeader.slice(7));
+      if (!authSessionId) {
+        res.status(401).json({ error: 'invalid_token' });
+        return;
+      }
+
+      // Calculate previous week range in Asia/Taipei (UTC+8)
+      const nowUtc = new Date();
+      const localNow = new Date(nowUtc.getTime() + 8 * 3600000);
+      const localDay = localNow.getUTCDay(); // 0=Sun, 1=Mon, …, 6=Sat
+      const daysSinceMon = localDay === 0 ? 6 : localDay - 1;
+
+      const thisMonday = new Date(localNow);
+      thisMonday.setUTCDate(localNow.getUTCDate() - daysSinceMon);
+      thisMonday.setUTCHours(0, 0, 0, 0);
+
+      const lastMonday = new Date(thisMonday);
+      lastMonday.setUTCDate(thisMonday.getUTCDate() - 7);
+
+      const fmt = (d: Date) =>
+        `${d.getUTCFullYear()}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${String(d.getUTCDate()).padStart(2, '0')}`;
+
+      const query = `from:hannah@yuan-tuo.com.tw subject:車資 after:${fmt(lastMonday)} before:${fmt(thisMonday)}`;
+      console.error(`[trigger] weekly-export starting: ${query}`);
+
+      // Respond immediately so GitHub Actions / caller doesn't time out
+      res.json({ success: true, query, message: 'Export started in background' });
+
+      // Run in background
+      handleBatchExportExcel(authSessionId, { query, max_results: 50 })
+        .then(result => {
+          const r = result as { processed?: number; excel_url?: string };
+          console.error(`[trigger] weekly-export done: processed=${r.processed} excel=${r.excel_url}`);
+        })
+        .catch(err => console.error('[trigger] weekly-export error:', (err as Error).message));
+    });
+
     // ── OAuth2 callback (handles both MCP flow and manual authorize_gmail) ────
 
     app.get('/oauth2callback', async (req, res) => {
