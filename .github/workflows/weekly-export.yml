@@ -2,8 +2,8 @@ name: Weekly Car Expense Export
 
 on:
   schedule:
-    # Every Monday 00:00 UTC = 08:00 Asia/Taipei (UTC+8)
-    - cron: '0 0 * * 1'
+    # Every Saturday 00:00 UTC = 08:00 Asia/Taipei (UTC+8)
+    - cron: '0 0 * * 6'
   workflow_dispatch:
     # Allow manual trigger for testing
 

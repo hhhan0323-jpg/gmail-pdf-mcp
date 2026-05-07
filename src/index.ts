@@ -718,23 +718,23 @@ async function main() {
         return;
       }
 
-      // Calculate previous week range in Asia/Taipei (UTC+8)
+      // Calculate previous week range in Asia/Taipei (UTC+8), Saturday-to-Saturday
       const nowUtc = new Date();
       const localNow = new Date(nowUtc.getTime() + 8 * 3600000);
       const localDay = localNow.getUTCDay(); // 0=Sun, 1=Mon, …, 6=Sat
-      const daysSinceMon = localDay === 0 ? 6 : localDay - 1;
+      const daysSinceSat = localDay === 6 ? 0 : localDay + 1;
 
-      const thisMonday = new Date(localNow);
-      thisMonday.setUTCDate(localNow.getUTCDate() - daysSinceMon);
-      thisMonday.setUTCHours(0, 0, 0, 0);
+      const thisSaturday = new Date(localNow);
+      thisSaturday.setUTCDate(localNow.getUTCDate() - daysSinceSat);
+      thisSaturday.setUTCHours(0, 0, 0, 0);
 
-      const lastMonday = new Date(thisMonday);
-      lastMonday.setUTCDate(thisMonday.getUTCDate() - 7);
+      const lastSaturday = new Date(thisSaturday);
+      lastSaturday.setUTCDate(thisSaturday.getUTCDate() - 7);
 
       const fmt = (d: Date) =>
         `${d.getUTCFullYear()}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${String(d.getUTCDate()).padStart(2, '0')}`;
 
-      const query = `from:hannah@yuan-tuo.com.tw subject:車資 after:${fmt(lastMonday)} before:${fmt(thisMonday)}`;
+      const query = `from:hannah@yuan-tuo.com.tw subject:車資 after:${fmt(lastSaturday)} before:${fmt(thisSaturday)}`;
       console.error(`[trigger] weekly-export starting: ${query}`);
 
       // Respond immediately so GitHub Actions / caller doesn't time out
