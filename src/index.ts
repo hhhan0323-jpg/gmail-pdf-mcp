@@ -734,7 +734,7 @@ async function main() {
       const fmt = (d: Date) =>
         `${d.getUTCFullYear()}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${String(d.getUTCDate()).padStart(2, '0')}`;
 
-      const query = `from:hannah@yuan-tuo.com.tw subject:車資 after:${fmt(lastSaturday)} before:${fmt(thisSaturday)}`;
+      const query = `subject:車資 after:${fmt(lastSaturday)} before:${fmt(thisSaturday)}`;
       console.error(`[trigger] weekly-export starting: ${query}`);
 
       // Respond immediately so GitHub Actions / caller doesn't time out
