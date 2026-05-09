@@ -297,6 +297,22 @@ function parseSubjectDate(subject: string): string {
   return '';
 }
 
+// Parse M/D date prefix in subject: "5/4車資-..." or "4/29車資-..." → "2026/05/04"
+function parseSubjectShortDate(subject: string): string {
+  const m = subject.match(/^(\d{1,2})\/(\d{1,2})/);
+  if (!m) return '';
+  const year = new Date().getFullYear();
+  return `${year}/${m[1].padStart(2, '0')}/${m[2].padStart(2, '0')}`;
+}
+
+// Extract case number embedded after opposing party in subject: "車資-瓦城-壹鈞921" → "921"
+function parseSubjectCaseNumber(subject: string): string {
+  // Match digits (1–5 chars, not a 6-digit YYMMDD date) appended to the opposing party token
+  const m = subject.match(/車資[-–][^-–\d(（\s]+[-–][^-–\d(（\s]+?(\d{1,5})(?:\D|$)/);
+  if (m && m[1].length <= 4) return m[1];
+  return '';
+}
+
 // ── HTML stripping ────────────────────────────────────────────────────────────
 
 function stripHtml(html: string): string {
@@ -364,16 +380,18 @@ export function parseEmailFields(
     extractYoxiDate(text) || extractUberDate(text) || extractMinguoDate(text) ||
     extractEnglishDate(text) || extractUberShortDate(text) || extractSlashDate(text) ||
     extractRideDateFromBody(text) ||
-    parseSubjectDate(subject);
+    parseSubjectDate(subject) || parseSubjectShortDate(subject);
 
+  // Fall back to `after` (forwarded section) when the structured form fields appear
+  // there rather than in the top portion of the email.
   const getField = (key: string) =>
-    extractFieldMulti(beforeUnquoted, key) || extractFieldMulti(before, key);
+    extractFieldMulti(beforeUnquoted, key) || extractFieldMulti(before, key) || extractFieldMulti(after, key);
 
   return {
     rideDate,
     clientName,
     opposingName,
-    caseNumber: getField('案號'),
+    caseNumber: getField('案號') || parseSubjectCaseNumber(subject),
     destination: getField('抵達地點'),
     requester: extractRequester(senderName),
     amount,
