@@ -7,6 +7,9 @@
 
 import puppeteer from 'puppeteer';
 import { parseReceiptOcrText } from './parser.js';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 const SUPPORTED_IMAGE_TYPES = new Set([
   'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
@@ -18,18 +21,24 @@ export interface OcrResult {
 }
 
 // Render the first page of a PDF to JPEG via headless Chrome.
+// Write to a temp file so Chrome's built-in PDF viewer renders it properly
+// (data: URLs cause Chrome to show a download prompt instead of rendering).
 async function pdfToJpeg(pdfBuffer: Buffer): Promise<Buffer | null> {
   let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
+  let tmpFile: string | null = null;
   try {
+    tmpFile = path.join(os.tmpdir(), `pdf-ocr-${Date.now()}.pdf`);
+    fs.writeFileSync(tmpFile, pdfBuffer);
+
     browser = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
     });
     const page = await browser.newPage();
     await page.setViewport({ width: 1240, height: 1754 });
-    const dataUrl = `data:application/pdf;base64,${pdfBuffer.toString('base64')}`;
-    await page.goto(dataUrl, { waitUntil: 'networkidle0', timeout: 15000 });
-    await new Promise(r => setTimeout(r, 1500));
+    const fileUrl = `file://${tmpFile}`;
+    await page.goto(fileUrl, { waitUntil: 'networkidle0', timeout: 20000 });
+    await new Promise(r => setTimeout(r, 2500));
     const shot = await page.screenshot({ type: 'jpeg', quality: 90 });
     return Buffer.from(shot);
   } catch (err) {
@@ -37,6 +46,7 @@ async function pdfToJpeg(pdfBuffer: Buffer): Promise<Buffer | null> {
     return null;
   } finally {
     await browser?.close();
+    if (tmpFile) { try { fs.unlinkSync(tmpFile); } catch { /* ignore */ } }
   }
 }
 
