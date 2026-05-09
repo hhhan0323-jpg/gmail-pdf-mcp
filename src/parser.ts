@@ -297,10 +297,14 @@ function parseSubjectDate(subject: string): string {
   return '';
 }
 
-// Parse M/D date prefix in subject: "5/4車資-..." or "4/29車資-..." → "2026/05/04"
+// Parse M/D date in subject: "5/4車資-..." or "Fwd: 5/4 車資-..." → "2026/05/04"
+// Matches M/D pattern appearing anywhere before 車資 (or just anywhere in subject)
 function parseSubjectShortDate(subject: string): string {
-  const m = subject.match(/^(\d{1,2})\/(\d{1,2})/);
+  const m = subject.match(/(\d{1,2})\/(\d{1,2})/);
   if (!m) return '';
+  const month = parseInt(m[1], 10);
+  const day = parseInt(m[2], 10);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return '';
   const year = new Date().getFullYear();
   return `${year}/${m[1].padStart(2, '0')}/${m[2].padStart(2, '0')}`;
 }
@@ -360,8 +364,8 @@ export function parseEmailFields(
   // reply-correction emails use the new corrected values rather than the quoted original.
   const beforeUnquoted = before.split('\n').filter(l => !/^\s*>/.test(l)).join('\n');
 
-  const clientName = extractFieldMulti(beforeUnquoted, '客戶名稱') || extractFieldMulti(before, '客戶名稱') || fromSubject.clientName;
-  const opposingName = extractFieldMulti(beforeUnquoted, '對造名稱') || extractFieldMulti(before, '對造名稱') || fromSubject.opposingName;
+  const clientName = extractFieldMulti(beforeUnquoted, '客戶名稱') || extractFieldMulti(before, '客戶名稱') || extractFieldMulti(after, '客戶名稱') || fromSubject.clientName;
+  const opposingName = extractFieldMulti(beforeUnquoted, '對造名稱') || extractFieldMulti(before, '對造名稱') || extractFieldMulti(after, '對造名稱') || fromSubject.opposingName;
 
   // Amount: receipt first, then full text, then body label
   const amount =
