@@ -1,0 +1,26 @@
+properties:
+  configuration:
+    triggerType: Schedule
+    replicaTimeout: 600
+    replicaRetryLimit: 1
+    scheduleTriggerConfig:
+      cronExpression: "0 0 * * 6"
+      parallelism: 1
+      replicaCompletionCount: 1
+  template:
+    containers:
+      - image: curlimages/curl:latest
+        name: weekly-trigger
+        args:
+          - "-f"
+          - "-s"
+          - "-X"
+          - "POST"
+          - "-H"
+          - "Authorization: Bearer ea24573cbf0a6c2094f564206ec2f4a33bdb79b92b556aee121d3fc2ffd4be22"
+          - "-H"
+          - "Content-Type: application/json"
+          - "https://gmail-pdf-mcp.mangorock-dcccac4c.eastasia.azurecontainerapps.io/trigger/weekly-export"
+        resources:
+          cpu: 0.25
+          memory: "0.5Gi"

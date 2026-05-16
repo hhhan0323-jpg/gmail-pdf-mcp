@@ -1,11 +1,9 @@
 name: Weekly Car Expense Export
 
 on:
-  schedule:
-    # Every Saturday 00:00 UTC = 08:00 Asia/Taipei (UTC+8)
-    - cron: '0 0 * * 6'
   workflow_dispatch:
-    # Allow manual trigger for testing
+    # Manual trigger only — automatic scheduling is handled by Azure Container App Job
+    # (gmail-pdf-weekly-trigger, cron: 0 0 * * 6 = Saturday 08:00 Asia/Taipei)
 
 jobs:
   export:
