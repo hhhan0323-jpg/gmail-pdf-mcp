@@ -135,6 +135,12 @@ function extractUberChineseAmount(text: string): number | null {
   return m ? parseInt(m[1].replace(/,/g, ''), 10) : null;
 }
 
+function extractThsrcBookingAmount(text: string): number | null {
+  // THSRC online booking confirmation: "費用(NTD)：$2980.0"
+  const m = text.match(/費用\s*\([^)]*\)\s*[：:]\s*\$?([\d,]+)/);
+  return m ? parseInt(m[1].replace(/,/g, ''), 10) : null;
+}
+
 function extractUberDate(text: string): string {
   // Generic Chinese date in receipt: "2026年04月27日" or "2026 年 4 月 13 日"
   const m = text.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
@@ -370,6 +376,7 @@ export function parseEmailFields(
   // Amount: receipt first, then full text, then body label
   const amount =
     extractYoxiAmount(after) ?? extractUberAmount(after) ?? extractUberChineseAmount(after) ??
+    extractThsrcBookingAmount(after) ??
     extractYoxiAmount(text) ?? extractUberAmount(text) ?? extractUberChineseAmount(text) ??
     extractAmountFromBody(before);
 
