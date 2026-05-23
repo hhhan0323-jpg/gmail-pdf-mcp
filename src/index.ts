@@ -1,4 +1,4 @@
-import 'dotenv/config';
+﻿import 'dotenv/config';
 import { randomUUID } from 'crypto';
 import express from 'express';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -760,7 +760,7 @@ async function main() {
           // Send completion notification email
           try {
             const auth = await getAuthClientForSession(sid);
-            const subject = `每週車資報表已完成 ${result.date_range ?? ''}`;
+            const subject = `【自動通知】每週報表完成 ${result.date_range ?? ''}`;
             const body = [
               `${userEmail} 您好，`,
               ``,
