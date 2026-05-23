@@ -12,7 +12,7 @@ import {
 import {
   getAuthClientForSession, generateWebAuthUrl, completeOAuthCallback, getSessionAuthStatus,
   startMcpOAuthFlow, completeMcpOAuthCallback, exchangeMcpCode, validateBearerToken,
-  initScheduleTokens, saveScheduleToken,
+  initScheduleTokens, saveScheduleToken, getScheduleUserEmails,
 } from './auth.js';
 import type { OAuth2Client } from 'google-auth-library';
 import { searchEmails, fetchEmail, fetchAllAttachmentData, applyLabelToMessage, sendNotificationEmail } from './gmail.js';
@@ -735,42 +735,58 @@ async function main() {
         `${d.getUTCFullYear()}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${String(d.getUTCDate()).padStart(2, '0')}`;
 
       const query = `subject:車資 after:${fmt(lastSaturday)} before:${fmt(thisSaturday)}`;
-      console.error(`[trigger] weekly-export starting: ${query}`);
 
-      // Respond immediately so GitHub Actions / caller doesn't time out
-      res.json({ success: true, query, message: 'Export started in background' });
+      // Use per-user schedule tokens so the export runs under each user's Gmail/Drive.
+      // Fall back to the deployer account (authSessionId) if no per-user tokens exist.
+      const userEmails = getScheduleUserEmails();
+      const sessionIds = userEmails.length > 0
+        ? userEmails.map(email => `schedule:${email}`)
+        : [authSessionId];
 
-      // Run in background
-      handleBatchExportExcel(authSessionId, { query, max_results: 50 })
-        .then(async result => {
-          const r = result as { processed?: number; failed?: number; excel_url?: string; date_range?: string };
-          console.error(`[trigger] weekly-export done: processed=${r.processed} excel=${r.excel_url}`);
+      console.error(`[trigger] weekly-export starting: ${query} for ${sessionIds.join(', ')}`);
+
+      // Run export synchronously for all users (keeps HTTP connection open so the
+      // container is not scaled down to 0 before the export finishes).
+      const exportResults: Array<{ user: string; processed: number; failed: number; excel_url?: string }> = [];
+      for (const sid of sessionIds) {
+        const userEmail = sid.startsWith('schedule:') ? sid.slice(9) : 'deployer';
+        try {
+          const result = await handleBatchExportExcel(sid, { query, max_results: 50 }) as {
+            processed?: number; failed?: number; excel_url?: string; date_range?: string;
+          };
+          console.error(`[trigger] weekly-export done [${userEmail}]: processed=${result.processed} excel=${result.excel_url}`);
+          exportResults.push({ user: userEmail, processed: result.processed ?? 0, failed: result.failed ?? 0, excel_url: result.excel_url });
 
           // Send completion notification email
           try {
-            const auth = await getAuthClientForSession(authSessionId);
-            const subject = `每週車資報表已完成 ${r.date_range ?? ''}`;
+            const auth = await getAuthClientForSession(sid);
+            const subject = `每週車資報表已完成 ${result.date_range ?? ''}`;
             const body = [
-              `Hannah 您好，`,
+              `${userEmail} 您好，`,
               ``,
               `本週車資報表已自動完成，摘要如下：`,
               ``,
               `  搜尋條件：${query}`,
-              `  已處理：${r.processed ?? 0} 封`,
-              `  失敗：${r.failed ?? 0} 封`,
+              `  已處理：${result.processed ?? 0} 封`,
+              `  失敗：${result.failed ?? 0} 封`,
               ``,
               `Excel 連結：`,
-              `  ${r.excel_url ?? '（無法取得連結）'}`,
+              `  ${result.excel_url ?? '（無法取得連結）'}`,
               ``,
-              `此為自動排程通知，每週一 08:00 執行。`,
+              `此為自動排程通知，每週六 08:00 執行。`,
             ].join('\n');
-            await sendNotificationEmail(auth, 'hannah@yuan-tuo.com.tw', subject, body);
-            console.error('[trigger] notification email sent');
+            await sendNotificationEmail(auth, userEmail, subject, body);
+            console.error(`[trigger] notification email sent to ${userEmail}`);
           } catch (err) {
-            console.error('[trigger] notification email failed:', (err as Error).message);
+            console.error(`[trigger] notification email failed [${userEmail}]:`, (err as Error).message);
           }
-        })
-        .catch(err => console.error('[trigger] weekly-export error:', (err as Error).message));
+        } catch (err) {
+          console.error(`[trigger] weekly-export error [${userEmail}]:`, (err as Error).message);
+          exportResults.push({ user: userEmail, processed: 0, failed: -1 });
+        }
+      }
+
+      res.json({ success: true, query, results: exportResults });
     });
 
     // ── OAuth2 callback (handles both MCP flow and manual authorize_gmail) ────

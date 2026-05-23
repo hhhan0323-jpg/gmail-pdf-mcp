@@ -469,6 +469,14 @@ export async function autoPersistBearerToken(token: string): Promise<void> {
 }
 
 /**
+ * Return all unique emails that have a per-user schedule token registered.
+ * Used by the weekly-export trigger to run for each authorized user.
+ */
+export function getScheduleUserEmails(): string[] {
+  return [...new Set(scheduleTokenMap.values())];
+}
+
+/**
  * Load all per-user schedule tokens from Key Vault into memory.
  * Called once at server startup in Azure mode.
  */

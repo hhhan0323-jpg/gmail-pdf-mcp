@@ -1,7 +1,7 @@
 properties:
   configuration:
     triggerType: Schedule
-    replicaTimeout: 600
+    replicaTimeout: 1800
     replicaRetryLimit: 1
     scheduleTriggerConfig:
       cronExpression: "0 0 * * 6"
@@ -12,6 +12,8 @@ properties:
       - image: curlimages/curl:latest
         name: weekly-trigger
         args:
+          - "--max-time"
+          - "1750"
           - "-f"
           - "-s"
           - "-X"
