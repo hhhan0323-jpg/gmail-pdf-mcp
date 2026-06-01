@@ -1,4 +1,4 @@
-import { randomUUID, createHash, randomBytes } from 'crypto';
+import { randomUUID, createHash, createHmac, randomBytes } from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
 import http from 'http';
@@ -74,6 +74,18 @@ export async function saveRefreshTokenToKeyVault(refreshToken: string): Promise<
   const client = getKeyVaultClient();
   await client.setSecret('gmail-refresh-token', refreshToken);
   console.error('refresh_token saved to Key Vault.');
+}
+
+// ── Auth-refresh link helpers ──────────────────────────────────────────────────
+
+/** Deterministic per-email HMAC key for the /auth-refresh link (24-hex chars). */
+export function generateAuthRefreshKey(email: string): string {
+  const secret = process.env.STATIC_BEARER_TOKEN ?? 'fallback';
+  return createHmac('sha256', secret).update(email).digest('hex').slice(0, 24);
+}
+
+export function validateAuthRefreshKey(email: string, key: string): boolean {
+  return generateAuthRefreshKey(email) === key;
 }
 
 // ── Per-user schedule token helpers ───────────────────────────────────────────
@@ -155,7 +167,7 @@ async function persistAuthorizedClient(
   return { token, email };
 }
 
-async function getOrCreateScheduleClient(email: string): Promise<OAuth2Client> {
+export async function getOrCreateScheduleClient(email: string): Promise<OAuth2Client> {
   if (scheduleClients.has(email)) return scheduleClients.get(email)!;
   const sanitized = sanitizeEmail(email);
   const refreshToken = await getUserRefreshToken(sanitized);
@@ -316,6 +328,17 @@ export async function completeOAuthCallback(state: string, code: string): Promis
 
   client.setCredentials(tokens);
   sessionClients.set(sessionId, client);
+
+  // For schedule sessions re-authorizing via /auth-refresh, persist the new
+  // refresh token to Key Vault immediately so it survives the next cold start.
+  if (sessionId.startsWith('schedule:')) {
+    persistAuthorizedClient(client).then(({ email }) => {
+      console.error(`[auth] Re-auth token persisted to KV for ${email}`);
+    }).catch(err => {
+      console.error('[auth] Failed to persist re-auth token:', (err as Error).message);
+    });
+  }
+
   console.error(`[auth] Session ${sessionId.slice(0, 8)} authorized via Web OAuth`);
 }
 

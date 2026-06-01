@@ -13,6 +13,7 @@ import {
   getAuthClientForSession, generateWebAuthUrl, completeOAuthCallback, getSessionAuthStatus,
   startMcpOAuthFlow, completeMcpOAuthCallback, exchangeMcpCode, validateBearerToken,
   initScheduleTokens, saveScheduleToken, getScheduleUserEmails,
+  getOrCreateScheduleClient, generateAuthRefreshKey, validateAuthRefreshKey,
 } from './auth.js';
 import type { OAuth2Client } from 'google-auth-library';
 import { searchEmails, fetchEmail, fetchAllAttachmentData, applyLabelToMessage, sendNotificationEmail } from './gmail.js';
@@ -357,7 +358,9 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
   const processOne = async (summary: { messageId: string; subject: string }): Promise<EmailResult> => {
     try {
       const message = await fetchEmail(auth, summary.messageId);
+      console.error(`[fetch] ${message.senderName} | plain=${message.plainBody.length}b html=${message.htmlBody.length}b atts=${message.attachments.length}`);
       const baseFields = parseEmailFields(message.plainBody, message.htmlBody, message.senderName, message.subject);
+      console.error(`[parse] ${message.senderName} | amount=${baseFields.amount} date=${baseFields.rideDate}`);
 
       const attOcrResults: AttOcr[] = [];
       const needOcr = baseFields.amount === null || !baseFields.rideDate;
@@ -787,6 +790,75 @@ async function main() {
       }
 
       res.json({ success: true, query, results: exportResults });
+    });
+
+    // ── Auth reminder: send weekly re-auth email before Saturday's export ──────
+
+    app.post('/trigger/send-auth-reminder', async (req, res) => {
+      const authHeader = req.headers['authorization'];
+      if (!authHeader?.startsWith('Bearer ')) {
+        res.status(401).json({ error: 'unauthorized' });
+        return;
+      }
+      const authSessionId = validateBearerToken(authHeader.slice(7));
+      if (!authSessionId) {
+        res.status(401).json({ error: 'invalid_token' });
+        return;
+      }
+
+      const userEmails = getScheduleUserEmails();
+      if (userEmails.length === 0) {
+        res.json({ success: true, message: 'No scheduled users configured.', results: [] });
+        return;
+      }
+
+      const base = `https://${req.hostname}`;
+      const results: Array<{ email: string; status: string; error?: string }> = [];
+
+      for (const email of userEmails) {
+        try {
+          const key = generateAuthRefreshKey(email);
+          const authUrl = `${base}/auth-refresh?email=${encodeURIComponent(email)}&key=${key}`;
+
+          const subject = '【提醒】週六自動匯出 — 請點選連結授權（30 秒）';
+          const body = [
+            `${email} 您好，`,
+            ``,
+            `每週六 08:00 的車資自動匯出即將執行。`,
+            `請在今天點選以下連結完成授權，確保明天自動匯出順利執行：`,
+            ``,
+            `  ${authUrl}`,
+            ``,
+            `點選後選擇 ${email} 帳號，允許存取即可（約 30 秒）。`,
+            `此連結可重複使用，無需每週申請新連結。`,
+            ``,
+            `— Gmail PDF 自動通知`,
+          ].join('\n');
+
+          const auth = await getOrCreateScheduleClient(email);
+          await sendNotificationEmail(auth, email, subject, body);
+          console.error(`[auth-reminder] Sent reminder to ${email}`);
+          results.push({ email, status: 'sent' });
+        } catch (err) {
+          const msg = (err as Error).message;
+          console.error(`[auth-reminder] Failed to send reminder to ${email}:`, msg);
+          results.push({ email, status: 'failed', error: msg });
+        }
+      }
+
+      res.json({ success: true, results });
+    });
+
+    // ── Auth refresh redirect: generates a fresh Google OAuth URL on click ─────
+
+    app.get('/auth-refresh', (req, res) => {
+      const { email, key } = req.query as Record<string, string>;
+      if (!email || !key || !validateAuthRefreshKey(email, key)) {
+        res.status(403).send('<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family:sans-serif;text-align:center;padding:60px"><h1>❌ 連結無效</h1><p>請聯繫管理員重新產生授權連結。</p></body></html>');
+        return;
+      }
+      const url = generateWebAuthUrl(`schedule:${email}`);
+      res.redirect(302, url);
     });
 
     // ── OAuth2 callback (handles both MCP flow and manual authorize_gmail) ────

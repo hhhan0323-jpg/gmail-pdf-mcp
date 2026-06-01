@@ -50,12 +50,24 @@ function parseMimeTree(
   const contentId = findHeader(headers, 'Content-ID').replace(/[<>]/g, '');
 
   if (mime === 'text/html' && part.body?.data) {
-    result.html = decodeBase64Url(part.body.data);
+    // Keep the largest HTML part: forwarded emails often have a small wrapper (outer)
+    // and a large inner HTML (the actual forwarded content). Taking the largest ensures
+    // we capture the full content rather than just the forwarding note.
+    const decoded = decodeBase64Url(part.body.data);
+    if (decoded.length > result.html.length) result.html = decoded;
     return;
   }
 
-  if (mime === 'text/plain' && part.body?.data && !result.plain) {
-    result.plain = decodeBase64Url(part.body.data);
+  if (mime === 'text/plain' && part.body?.data) {
+    // Accumulate all plain-text parts (forwarded emails add more text/plain sections).
+    result.plain += (result.plain ? '\n' : '') + decodeBase64Url(part.body.data);
+    return;
+  }
+
+  // Embedded RFC822 message (forwarded email stored as raw bytes with no parsed parts).
+  // Decode and append to plain so amount-extraction patterns can match against it.
+  if (mime === 'message/rfc822' && part.body?.data && !(part.parts?.length)) {
+    result.plain += (result.plain ? '\n\n' : '') + decodeBase64Url(part.body.data);
     return;
   }
 
@@ -72,7 +84,7 @@ function parseMimeTree(
     return;
   }
 
-  // Recurse into multipart
+  // Recurse into multipart (and message/rfc822 with exposed inner parts)
   if (part.parts) {
     for (const child of part.parts) {
       parseMimeTree(child, result);

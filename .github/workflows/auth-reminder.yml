@@ -1,0 +1,23 @@
+name: Weekly Auth Reminder
+
+on:
+  schedule:
+    - cron: '0 7 * * 5'  # Friday 07:00 UTC = Friday 15:00 Asia/Taipei
+  workflow_dispatch:
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Send auth reminder email
+        run: |
+          echo "Sending auth reminder at $(date -u '+%Y-%m-%d %H:%M UTC')"
+          curl -f -s -X POST \
+            -H "Authorization: Bearer ${{ secrets.GMAIL_SCHEDULE_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            https://gmail-pdf-mcp.mangorock-dcccac4c.eastasia.azurecontainerapps.io/trigger/send-auth-reminder \
+            | tee /tmp/reminder_result.json
+          echo ""
+          echo "Reminder response: $(cat /tmp/reminder_result.json)"

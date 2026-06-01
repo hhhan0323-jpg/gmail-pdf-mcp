@@ -128,16 +128,21 @@ function extractUberPdfAmount(text: string): number | null {
 }
 
 function extractUberChineseAmount(text: string): number | null {
+  // "總計 $135.00" — Uber receipt grand total (must match before line-item "行程費用 $146")
   // "費用 $98.00", "實付金額 $445" — Chinese Uber/Google Maps receipt (plain $ prefix)
   // "總金額Total Amount：$580" — THSR T Express booking confirmation
-  const m = text.match(/(?:費用|實付金額|付款金額|應付金額)\s+\$([\d,]+)/)
+  const m = text.match(/總計\s+\$([\d,]+)/)
+    ?? text.match(/(?:費用|實付金額|付款金額|應付金額)\s+\$([\d,]+)/)
     ?? text.match(/Total Amount[：:]\s*\$([\d,]+)/i);
   return m ? parseInt(m[1].replace(/,/g, ''), 10) : null;
 }
 
 function extractThsrcBookingAmount(text: string): number | null {
-  // THSRC online booking confirmation: "費用(NTD)：$2980.0"
-  const m = text.match(/費用\s*\([^)]*\)\s*[：:]\s*\$?([\d,]+)/);
+  // THSRC online booking confirmation:
+  // - email text: "費用(NTD)：$2980.0"
+  // - OCR-rendered HTML: "總票價:$2980.0"
+  const m = text.match(/費用\s*\([^)]*\)\s*[：:]\s*\$?([\d,]+)/)
+    ?? text.match(/總票價[：:]\s*\$?([\d,]+)/);
   return m ? parseInt(m[1].replace(/,/g, ''), 10) : null;
 }
 
@@ -236,7 +241,8 @@ function extractRideDateFromBody(text: string): string {
 export function parseReceiptOcrText(text: string): { amount: number | null; rideDate: string } {
   const amount =
     extractYoxiAmount(text) ?? extractUberAmount(text) ?? extractUberChineseAmount(text) ??
-    extractThsrAmount(text) ?? extractTaxiReceiptAmount(text) ?? extractUberPdfAmount(text) ??
+    extractThsrAmount(text) ?? extractThsrcBookingAmount(text) ??
+    extractTaxiReceiptAmount(text) ?? extractUberPdfAmount(text) ??
     extractAmountFromBody(text) ?? extractReceiptLabelAmount(text);
 
   const rideDate =
