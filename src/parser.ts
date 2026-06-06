@@ -137,6 +137,20 @@ function extractUberChineseAmount(text: string): number | null {
   return m ? parseInt(m[1].replace(/,/g, ''), 10) : null;
 }
 
+function extractTaiwanTaxiAmount(text: string): number | null {
+  // 台灣大車隊 / 小黃計程車 app receipt — two-column OCR layout:
+  // "實付金額" label and "$XXX" amount are on adjacent lines separated by the taxi type text,
+  // e.g. "06月02日 (二) 11:21 實付金額\n小黃計程車 $235"
+  // Only apply when the receipt clearly belongs to this app.
+  if (!text.includes('台灣大車隊') && !text.includes('小黃計程車') && !text.includes('乘車資訊')) {
+    return null;
+  }
+  const m = text.match(/實付金額[\s\S]{0,80}\$([\d,]+)/);
+  if (!m) return null;
+  const n = parseInt(m[1].replace(/,/g, ''), 10);
+  return n >= 10 && n <= 99999 ? n : null;
+}
+
 function extractThsrcBookingAmount(text: string): number | null {
   // THSRC online booking confirmation:
   // - email text: "費用(NTD)：$2980.0"
@@ -243,6 +257,7 @@ export function parseReceiptOcrText(text: string): { amount: number | null; ride
     extractYoxiAmount(text) ?? extractUberAmount(text) ?? extractUberChineseAmount(text) ??
     extractThsrAmount(text) ?? extractThsrcBookingAmount(text) ??
     extractTaxiReceiptAmount(text) ?? extractUberPdfAmount(text) ??
+    extractTaiwanTaxiAmount(text) ??
     extractAmountFromBody(text) ?? extractReceiptLabelAmount(text);
 
   const rideDate =
