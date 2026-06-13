@@ -14,10 +14,26 @@ jobs:
       - name: Send auth reminder email
         run: |
           echo "Sending auth reminder at $(date -u '+%Y-%m-%d %H:%M UTC')"
-          curl -f -s -X POST \
+          curl -s -X POST \
             -H "Authorization: Bearer ${{ secrets.GMAIL_SCHEDULE_TOKEN }}" \
             -H "Content-Type: application/json" \
             https://gmail-pdf-mcp.mangorock-dcccac4c.eastasia.azurecontainerapps.io/trigger/send-auth-reminder \
-            | tee /tmp/reminder_result.json
-          echo ""
-          echo "Reminder response: $(cat /tmp/reminder_result.json)"
+            -o /tmp/reminder_result.json \
+            -w "%{http_code}" > /tmp/http_code.txt 2>/dev/null || echo "000" > /tmp/http_code.txt
+          HTTP_CODE=$(cat /tmp/http_code.txt)
+          RESULT=$(cat /tmp/reminder_result.json 2>/dev/null || echo '{}')
+          echo "HTTP $HTTP_CODE | Response: $RESULT"
+
+          # If token is expired or email failed, print the permanent re-auth link
+          if echo "$RESULT" | grep -q '"invalid_grant"\|"failed"' || [ "$HTTP_CODE" != "200" ]; then
+            echo ""
+            echo "=========================================="
+            echo "⚠️  授權信發送失敗（token 過期或 server 無回應）"
+            echo "請點擊以下連結重新授權（不需找 Claude 介入）："
+            echo ""
+            echo "  https://gmail-pdf-mcp.mangorock-dcccac4c.eastasia.azurecontainerapps.io/auth-refresh?email=hannah%40yuan-tuo.com.tw&key=575e57231d71bd4a6199c019"
+            echo ""
+            echo "授權完成後，下一次週六自動匯出即可正常執行。"
+            echo "=========================================="
+            exit 1
+          fi
