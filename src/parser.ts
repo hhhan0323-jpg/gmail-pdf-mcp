@@ -96,8 +96,8 @@ function extractYoxiAmount(text: string): number | null {
 }
 
 function extractUberAmount(text: string): number | null {
-  // "NT$267" or "NT$ 267"
-  const m = text.match(/NT\$\s*([\d,]+)/);
+  // "NT$267", "NT$ 267", or "NT $267" (space between NT and $)
+  const m = text.match(/NT\s*\$\s*([\d,]+)/);
   return m ? parseInt(m[1].replace(/,/g, ''), 10) : null;
 }
 
@@ -135,6 +135,28 @@ function extractUberChineseAmount(text: string): number | null {
     ?? text.match(/(?:費用|實付金額|付款金額|應付金額)\s+\$([\d,]+)/)
     ?? text.match(/Total Amount[：:]\s*\$([\d,]+)/i);
   return m ? parseInt(m[1].replace(/,/g, ''), 10) : null;
+}
+
+function extractTaxiVoucherAmount(text: string): number | null {
+  // Printed taxi voucher (計程車乘車證明): "Total $230"
+  // Guard: only apply when taxi voucher context is present
+  if (!text.includes('計程車') && !text.includes('乘車證明') &&
+      !text.includes('TAXI') && !/車牌/.test(text)) {
+    return null;
+  }
+  const m = text.match(/\bTotal\b\s*\$\s*([\d,]+)/i);
+  if (!m) return null;
+  const n = parseInt(m[1].replace(/,/g, ''), 10);
+  return n >= 10 && n <= 99999 ? n : null;
+}
+
+function extractNtdAmount(text: string): number | null {
+  // "NTD 2,459" — Taiwan airline tickets (華信/遠東/立榮) and some domestic transport receipts.
+  // Distinct from extractThsrAmount (which matches "TWD") and extractYoxiAmount (matches "支付金額 NTD").
+  const m = text.match(/\bNTD\s+([\d,]+)/);
+  if (!m) return null;
+  const n = parseInt(m[1].replace(/,/g, ''), 10);
+  return n >= 10 && n <= 99999 ? n : null;
 }
 
 function extractTaiwanTaxiAmount(text: string): number | null {
@@ -256,7 +278,8 @@ export function parseReceiptOcrText(text: string): { amount: number | null; ride
   const amount =
     extractYoxiAmount(text) ?? extractUberAmount(text) ?? extractUberChineseAmount(text) ??
     extractThsrAmount(text) ?? extractThsrcBookingAmount(text) ??
-    extractTaxiReceiptAmount(text) ?? extractUberPdfAmount(text) ??
+    extractTaxiReceiptAmount(text) ?? extractTaxiVoucherAmount(text) ??
+    extractUberPdfAmount(text) ?? extractNtdAmount(text) ??
     extractTaiwanTaxiAmount(text) ??
     extractAmountFromBody(text) ?? extractReceiptLabelAmount(text);
 
@@ -397,8 +420,9 @@ export function parseEmailFields(
   // Amount: receipt first, then full text, then body label
   const amount =
     extractYoxiAmount(after) ?? extractUberAmount(after) ?? extractUberChineseAmount(after) ??
-    extractThsrcBookingAmount(after) ??
+    extractThsrcBookingAmount(after) ?? extractNtdAmount(after) ??
     extractYoxiAmount(text) ?? extractUberAmount(text) ?? extractUberChineseAmount(text) ??
+    extractNtdAmount(text) ??
     extractAmountFromBody(before);
 
   // Strip "Date: ..." forwarding-header lines from `after` so receipt content dates take priority
