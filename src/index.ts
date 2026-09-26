@@ -211,6 +211,10 @@ const TOOLS = [
           type: 'boolean',
           description: '若 Drive 已有同名 PDF 則跳過重新轉換（預設 true）',
         },
+        folder_name: {
+          type: 'string',
+          description: '強制指定 Google Drive 資料夾名稱（格式如 "20260919-20260925"）。用於補跑缺失郵件時，讓 PDF 和 Excel 放入與原週相同的資料夾，而非依實際郵件日期自動命名。',
+        },
       },
       required: ['query'],
     },
@@ -321,16 +325,22 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
     driveUrl?: string;
   };
 
-  // Determine date range from email metadata → name the Drive folder
+  // Determine Drive folder name: use explicit folder_name when provided (e.g. re-runs),
+  // otherwise auto-compute from email date range.
   function compactDate(d: Date) {
     return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
   }
-  const validDates = emailSummaries.map(s => new Date(s.date)).filter(d => !isNaN(d.getTime()));
-  const minDate = validDates.length ? new Date(Math.min(...validDates.map(d => d.getTime()))) : new Date();
-  const maxDate = validDates.length ? new Date(Math.max(...validDates.map(d => d.getTime()))) : new Date();
-  const dateRangeName = compactDate(minDate) === compactDate(maxDate)
-    ? compactDate(minDate)
-    : `${compactDate(minDate)}-${compactDate(maxDate)}`;
+  let dateRangeName: string;
+  if (args['folder_name'] && typeof args['folder_name'] === 'string') {
+    dateRangeName = args['folder_name'];
+  } else {
+    const validDates = emailSummaries.map(s => new Date(s.date)).filter(d => !isNaN(d.getTime()));
+    const minDate = validDates.length ? new Date(Math.min(...validDates.map(d => d.getTime()))) : new Date();
+    const maxDate = validDates.length ? new Date(Math.max(...validDates.map(d => d.getTime()))) : new Date();
+    dateRangeName = compactDate(minDate) === compactDate(maxDate)
+      ? compactDate(minDate)
+      : `${compactDate(minDate)}-${compactDate(maxDate)}`;
+  }
 
   // Create shared Drive folder for this batch: Gmail PDF MCP / {dateRange} /
   const dateRangeFolderId = await createDateRangeDriveFolder(auth, dateRangeName);
