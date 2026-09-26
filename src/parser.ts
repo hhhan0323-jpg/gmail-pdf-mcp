@@ -91,7 +91,7 @@ function extractYoxiDate(text: string): string {
 
 function extractYoxiAmount(text: string): number | null {
   // "支付金額 NTD 334" or "支付金額 *NTD 105*" (plain text bold)
-  const m = text.match(/支付金額\s+\*?NTD\s+([\d,]+)/);
+  const m = text.match(/支付金額\s*\*?NTD\s+([\d,]+)/);
   return m ? parseInt(m[1].replace(/,/g, ''), 10) : null;
 }
 

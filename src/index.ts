@@ -737,7 +737,7 @@ async function main() {
       const fmt = (d: Date) =>
         `${d.getUTCFullYear()}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${String(d.getUTCDate()).padStart(2, '0')}`;
 
-      const query = `subject:車資 after:${fmt(lastSaturday)} before:${fmt(thisSaturday)}`;
+      const query = `subject:車資 -subject:例行通知 after:${fmt(lastSaturday)} before:${fmt(thisSaturday)}`;
 
       // Use per-user schedule tokens so the export runs under each user's Gmail/Drive.
       // Fall back to the deployer account (authSessionId) if no per-user tokens exist.
