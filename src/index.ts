@@ -451,12 +451,23 @@ async function handleBatchExportExcel(sessionId: string, args: Record<string, un
     }
   };
 
+  const MAX_RETRIES = 2;
+  const processWithRetry = async (summary: (typeof emailSummaries)[0], attempt = 1): ReturnType<typeof processOne> => {
+    const result = await processOne(summary);
+    if (!result.ok && attempt < MAX_RETRIES && result.error?.includes('Navigation timeout')) {
+      console.error(`[batch] retry ${attempt}/${MAX_RETRIES - 1} for ${summary.messageId} (navigation timeout)...`);
+      await new Promise(r => setTimeout(r, 3000));
+      return processWithRetry(summary, attempt + 1);
+    }
+    return result;
+  };
+
   // Process in parallel batches of 2 to stay within Azure timeout (4 min)
   const CONCURRENCY = 2;
   for (let i = 0; i < emailSummaries.length; i += CONCURRENCY) {
     const batch = emailSummaries.slice(i, i + CONCURRENCY);
     console.error(`[batch] processing emails ${i + 1}–${Math.min(i + CONCURRENCY, emailSummaries.length)} of ${emailSummaries.length}`);
-    const batchResults = await Promise.all(batch.map(processOne));
+    const batchResults = await Promise.all(batch.map(s => processWithRetry(s)));
     for (const r of batchResults) {
       if (r.ok) {
         for (const fields of r.rowFieldsList) {
